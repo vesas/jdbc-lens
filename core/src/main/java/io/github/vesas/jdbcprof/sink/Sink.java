@@ -124,29 +124,44 @@ public final class Sink {
 
     /**
      * Signal shutdown, wait for the worker to finish, then do a final
-     * flush-and-close. Safe to call once — subsequent calls are no-ops.
+     * flush-and-close. Safe to call multiple times — subsequent calls
+     * after the first successful stop are no-ops.
+     *
+     * <p>Deliberately NOT {@code synchronized} on the instance: the
+     * worker's post-loop {@link #flushOnce()} is synchronized, and if
+     * {@code stop} held the same monitor across {@link Thread#join()}
+     * the worker could never acquire it to finish. We narrow the
+     * monitor to the state-transition bookkeeping and do the
+     * {@code join} lock-free.
      */
-    public synchronized void stop() throws IOException {
-        if (worker == null) {
-            if (!stopping) {
-                stopping = true;
-                flushOnce();
+    public void stop() throws IOException {
+        Thread t;
+        synchronized (this) {
+            t = worker;
+            if (t == null) {
+                if (!stopping) {
+                    stopping = true;
+                    flushOnce();
+                }
+                writer.close();
+                return;
             }
-            writer.close();
-            return;
+            stopping = true;
         }
-        stopping = true;
-        worker.interrupt();
+        t.interrupt();
         try {
-            worker.join();
+            t.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while stopping sink", e);
         }
-        worker = null;
-        if (failure != null) {
-            IOException f = failure;
+        IOException f;
+        synchronized (this) {
+            worker = null;
+            f = failure;
             failure = null;
+        }
+        if (f != null) {
             try {
                 writer.close();
             } catch (IOException suppress) {
