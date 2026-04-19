@@ -34,11 +34,17 @@ public final class Main {
         // 3. Run a workload through the wrapped source.
         DataSource ds = DataSources.get();
         try (Connection c = ds.getConnection()) {
+            Profiler.currentOperation("schema");
             createSchema(c);
+            Profiler.currentOperation("seed");
             seed(c);
+            Profiler.currentOperation("list-dashboard");
             classicN1Loop(c);
+            Profiler.currentOperation("place-orders");
             batchedInserts(c);
+            Profiler.currentOperation("heartbeat");
             updateSessions(c);
+            Profiler.currentOperation(null);
         }
 
         // 4. Stop the profiler (the shutdown hook would also handle this).

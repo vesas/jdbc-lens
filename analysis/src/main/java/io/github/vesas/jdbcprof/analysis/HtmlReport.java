@@ -45,11 +45,55 @@ public final class HtmlReport {
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
+        renderOperations(out, m);
         renderFlameGraph(out, flame);
         renderPairsTable(out, m);
         renderCallSitesTable(out, m);
         renderTemplatesTable(out, m);
         renderFooter(out);
+    }
+
+    private static void renderOperations(PrintStream out, Model m) {
+        out.println("<h2>Operations</h2>");
+        boolean anyOp = m.ops != null && !m.ops.isEmpty();
+        if (!anyOp) {
+            out.println("<p class=\"findings-empty\">No op-ids were recorded. "
+                    + "Call <code>Profiler.currentOperation(\"name\")</code> "
+                    + "at the start of each logical unit (request, test, job) "
+                    + "to group events.</p>");
+            return;
+        }
+        out.println("<table>");
+        out.println("  <thead><tr>"
+                + "<th>Operation</th>"
+                + "<th class=\"num\" data-default-sort=\"desc\" aria-sort=\"desc\">DB time</th>"
+                + "<th class=\"num\">Events</th>"
+                + "<th class=\"num\">Templates</th>"
+                + "</tr></thead>");
+        out.println("  <tbody>");
+        m.opStats.entrySet().stream()
+                .sorted((a, b) -> Long.compare(
+                        b.getValue().totalDurationNanos,
+                        a.getValue().totalDurationNanos))
+                .forEach(entry -> {
+                    long opId = entry.getKey();
+                    OpStats s = entry.getValue();
+                    boolean noOp = opId == NO_OPERATION;
+                    String label = noOp
+                            ? "(no operation)"
+                            : m.ops.getOrDefault(opId, "op[" + opId + "]");
+                    String labelCell = noOp
+                            ? "<td class=\"muted\">" + htmlEscape(label) + "</td>"
+                            : "<td><code class=\"site\">" + htmlEscape(label) + "</code></td>";
+                    out.println("    <tr>"
+                            + labelCell
+                            + tdDuration(s.totalDurationNanos)
+                            + tdCount(s.count)
+                            + tdCount(s.distinctSqls.size())
+                            + "</tr>");
+                });
+        out.println("  </tbody>");
+        out.println("</table>");
     }
 
     private static void renderFlameGraph(PrintStream out, FlameGraph.Node root) {
@@ -59,10 +103,19 @@ public final class HtmlReport {
         FlameGraph.renderHtml(out, root);
     }
 
+    /** Sentinel in Event.operationId meaning "no op was set." Mirrors
+     *  {@code CaptureContext.NO_OPERATION}; duplicated here to avoid an
+     *  extra cross-module import for a single constant. */
+    private static final long NO_OPERATION = -1L;
+
     private static final class Model {
         Path source;
         Map<Integer, String> sqls = new HashMap<>();
         Map<Integer, StackFrameSnapshot[]> stacks = new HashMap<>();
+        // Op-id → name. Events with operationId = -1 ("no op") are not
+        // in this map; renderers display them as "(no operation)".
+        Map<Long, String> ops = new HashMap<>();
+        Map<Long, OpStats> opStats = new HashMap<>();
         Aggregator agg = new Aggregator();
         // Same shape as `agg` but restricted to actual query executions
         // (PREPARE / NEXT / CLOSE / COMMIT / ROLLBACK dropped). Spec §8.3
@@ -100,6 +153,13 @@ public final class HtmlReport {
                 }
 
                 @Override
+                public void onOpDelta(int firstId, List<String> names) {
+                    for (int i = 0; i < names.size(); i++) {
+                        m.ops.put((long) (firstId + i), names.get(i));
+                    }
+                }
+
+                @Override
                 public void onEvents(List<Event> events) {
                     for (Event e : events) {
                         m.agg.add(e);
@@ -122,6 +182,12 @@ public final class HtmlReport {
                         m.stacksPerTemplate
                                 .computeIfAbsent(e.sqlId, k -> new HashSet<>())
                                 .add(e.stackTraceId);
+                        OpStats os = m.opStats.computeIfAbsent(e.operationId, k -> new OpStats());
+                        os.count++;
+                        os.totalDurationNanos += dur;
+                        if (e.sqlId >= 0) {
+                            os.distinctSqls.add(e.sqlId);
+                        }
                     }
                 }
             });
@@ -141,6 +207,12 @@ public final class HtmlReport {
                     || c == EventType.EXECUTE_UPDATE.code()
                     || c == EventType.EXECUTE_BATCH.code();
         }
+    }
+
+    private static final class OpStats {
+        long count;
+        long totalDurationNanos;
+        Set<Integer> distinctSqls = new HashSet<>();
     }
 
     // --- rendering ---
