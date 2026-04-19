@@ -25,8 +25,10 @@ public final class Main {
     public static void main(String[] args) throws Exception {
         Path log = Path.of(RECORDING).toAbsolutePath();
 
-        // 1. Start the profiler.
-        Profiler.start(ProfilerConfig.defaults(log));
+        // 1. Start the profiler with parameter-value capture on so the
+        //    demo report shows literal bound values under each
+        //    redundant-queries card.
+        Profiler.start(ProfilerConfig.defaults(log).withCaptureParameterValues(true));
 
         // 2. Wrap the single DataSource seam.
         DataSources.set(Profiler.wrap(DataSources.get()));

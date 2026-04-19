@@ -2,6 +2,7 @@ package io.github.vesas.jdbcprof;
 
 import io.github.vesas.jdbcprof.capture.Event;
 import io.github.vesas.jdbcprof.capture.EventType;
+import io.github.vesas.jdbcprof.capture.ParameterValues;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
 import io.github.vesas.jdbcprof.storage.BinaryLogReader;
 import org.h2.jdbcx.JdbcDataSource;
@@ -63,7 +64,7 @@ class ProfilerSmokeTest {
         ProfilerConfig cfg = new ProfilerConfig(
                 log, 64, 20,
                 ProfilerConfig.defaults(log).frameExclusions(),
-                10, 0.9);
+                10, 0.9, false);
 
         Profiler.start(cfg);
         try {
@@ -156,6 +157,33 @@ class ProfilerSmokeTest {
         assertThat(execOps[2]).isEqualTo(-1L);  // cleared with null
     }
 
+    @Test
+    void parameterValuesRoundTripWhenCaptureEnabled(@TempDir Path tmp) throws Exception {
+        Path log = tmp.resolve("pv.jdbclog");
+        ProfilerConfig cfg = ProfilerConfig.defaults(log).withCaptureParameterValues(true);
+        Profiler.start(cfg);
+        try {
+            DataSource ds = Profiler.wrap(newH2());
+            try (Connection conn = ds.getConnection();
+                 PreparedStatement ps = conn.prepareStatement("SELECT ? AS v")) {
+                ps.setInt(1, 42);
+                try (ResultSet rs = ps.executeQuery()) { while (rs.next()) rs.getInt(1); }
+            }
+        } finally {
+            Profiler.stop();
+        }
+
+        Collected c = readAll(log);
+        assertThat(c.paramValues).hasSize(1);
+        assertThat(c.paramValues.get(0).slots()).containsExactly("42");
+
+        int executeValuesId = c.events.stream()
+                .filter(e -> EventType.fromCode(e.eventType) == EventType.EXECUTE_QUERY)
+                .mapToInt(e -> e.parameterValuesId)
+                .findFirst().orElseThrow();
+        assertThat(executeValuesId).isEqualTo(0);
+    }
+
     private static Collected readAll(Path log) throws IOException {
         Collected c = new Collected();
         new BinaryLogReader(log).read(new BinaryLogReader.Handler() {
@@ -168,6 +196,9 @@ class ProfilerSmokeTest {
             @Override public void onOpDelta(int firstId, List<String> names) {
                 c.ops.addAll(names);
             }
+            @Override public void onParamValuesDelta(int firstId, List<ParameterValues> entries) {
+                c.paramValues.addAll(entries);
+            }
             @Override public void onEvents(List<Event> batch) {
                 c.events.addAll(batch);
             }
@@ -179,6 +210,7 @@ class ProfilerSmokeTest {
         final List<String> sqls = new ArrayList<>();
         final List<StackFrameSnapshot[]> stacks = new ArrayList<>();
         final List<String> ops = new ArrayList<>();
+        final List<ParameterValues> paramValues = new ArrayList<>();
         final List<Event> events = new ArrayList<>();
     }
 }

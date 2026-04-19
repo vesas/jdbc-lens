@@ -1,6 +1,7 @@
 package io.github.vesas.jdbcprof.storage;
 
 import io.github.vesas.jdbcprof.capture.Event;
+import io.github.vesas.jdbcprof.capture.ParameterValues;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
 
 import java.io.IOException;
@@ -29,6 +30,7 @@ public final class BinaryLogReader {
         default void onSqlDelta(int firstId, List<String> sqls) {}
         default void onStackDelta(int firstId, List<StackFrameSnapshot[]> stacks) {}
         default void onOpDelta(int firstId, List<String> names) {}
+        default void onParamValuesDelta(int firstId, List<ParameterValues> entries) {}
         default void onEvents(List<Event> events) {}
     }
 
@@ -64,6 +66,7 @@ public final class BinaryLogReader {
                 case LogFormat.REC_SQL_DELTA -> readSqlDelta(bb, handler);
                 case LogFormat.REC_STACK_DELTA -> readStackDelta(bb, handler);
                 case LogFormat.REC_OP_DELTA -> readOpDelta(bb, handler);
+                case LogFormat.REC_PARAM_VALUES_DELTA -> readParamValuesDelta(bb, handler);
                 case LogFormat.REC_EVENTS -> readEvents(bb, handler);
                 case LogFormat.REC_END -> {
                     if (bb.position() != recordEnd || bb.hasRemaining()) {
@@ -105,6 +108,24 @@ public final class BinaryLogReader {
             sqls.add(new String(bytes, StandardCharsets.UTF_8));
         }
         handler.onSqlDelta(firstId, sqls);
+    }
+
+    private static void readParamValuesDelta(ByteBuffer bb, Handler handler) {
+        int firstId = bb.getInt();
+        int count = bb.getInt();
+        List<ParameterValues> entries = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            int slotCount = bb.getInt();
+            List<String> slots = new ArrayList<>(slotCount);
+            for (int j = 0; j < slotCount; j++) {
+                int len = bb.getInt();
+                byte[] bytes = new byte[len];
+                bb.get(bytes);
+                slots.add(new String(bytes, StandardCharsets.UTF_8));
+            }
+            entries.add(new ParameterValues(slots));
+        }
+        handler.onParamValuesDelta(firstId, entries);
     }
 
     private static void readOpDelta(ByteBuffer bb, Handler handler) {
@@ -160,6 +181,7 @@ public final class BinaryLogReader {
             e.rowsAffected = bb.getInt();
             e.batchSize = bb.getInt();
             e.parameterFingerprint = bb.getLong();
+            e.parameterValuesId = bb.getInt();
             bb.position(bb.position() + 3); // skip padding
             events.add(e);
         }

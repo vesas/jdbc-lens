@@ -27,6 +27,8 @@ public final class CaptureContext {
     private final SqlInternTable sqlIntern = new SqlInternTable();
     private final StackTraceInternTable stackIntern;
     private final OperationInternTable opIntern = new OperationInternTable();
+    private final ParameterValuesInternTable paramValuesIntern = new ParameterValuesInternTable();
+    private final boolean captureParameterValues;
 
     private final int ringCapacity;
     private final CopyOnWriteArrayList<SpscRingBuffer> allRings = new CopyOnWriteArrayList<>();
@@ -38,7 +40,12 @@ public final class CaptureContext {
     private final ThreadLocal<Long> currentOperation = ThreadLocal.withInitial(() -> NO_OPERATION);
 
     public CaptureContext(int ringCapacity, int stackDepthLimit) {
+        this(ringCapacity, stackDepthLimit, false);
+    }
+
+    public CaptureContext(int ringCapacity, int stackDepthLimit, boolean captureParameterValues) {
         this.ringCapacity = ringCapacity;
+        this.captureParameterValues = captureParameterValues;
         this.stackIntern = new StackTraceInternTable(stackDepthLimit);
         // Capture the parameter (effectively final) rather than this.ringCapacity
         // so the field's definite-assignment check is satisfied and the lambda
@@ -66,6 +73,14 @@ public final class CaptureContext {
 
     public OperationInternTable opIntern() {
         return opIntern;
+    }
+
+    public ParameterValuesInternTable paramValuesIntern() {
+        return paramValuesIntern;
+    }
+
+    public boolean captureParameterValues() {
+        return captureParameterValues;
     }
 
     /**
@@ -109,6 +124,15 @@ public final class CaptureContext {
                      long startNanos, long durationNanos,
                      int rowsAffected, int batchSize,
                      long parameterFingerprint) {
+        emit(eventType, sqlId, startNanos, durationNanos,
+                rowsAffected, batchSize, parameterFingerprint, -1);
+    }
+
+    public void emit(byte eventType, int sqlId,
+                     long startNanos, long durationNanos,
+                     int rowsAffected, int batchSize,
+                     long parameterFingerprint,
+                     int parameterValuesId) {
         SpscRingBuffer ring = threadRing.get();
         Event e = ring.claim();
         if (e == null) {
@@ -125,6 +149,7 @@ public final class CaptureContext {
         e.rowsAffected = rowsAffected;
         e.batchSize = batchSize;
         e.parameterFingerprint = parameterFingerprint;
+        e.parameterValuesId = parameterValuesId;
         ring.publish();
     }
 }

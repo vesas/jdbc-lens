@@ -80,6 +80,8 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
     private final int sqlId;
 
     private long[] paramHashes;
+    private String[] paramValues;
+    private int maxIndex;
 
     CapturingPreparedStatement(PreparedStatement delegate, CaptureContext ctx, int sqlId) {
         super(delegate, ctx);
@@ -100,6 +102,37 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
             paramHashes = bigger;
         }
         paramHashes[parameterIndex] = (tag * FNV_PRIME) ^ valueHash;
+        if (parameterIndex > maxIndex) {
+            maxIndex = parameterIndex;
+        }
+    }
+
+    private void setSlot(int parameterIndex, long tag, long valueHash, String display) {
+        setSlot(parameterIndex, tag, valueHash);
+        if (!ctx.captureParameterValues()) {
+            return;
+        }
+        if (paramValues == null || parameterIndex >= paramValues.length) {
+            int newLen = Math.max(parameterIndex + 1, paramValues == null ? 4 : paramValues.length * 2);
+            String[] bigger = new String[newLen];
+            if (paramValues != null) {
+                System.arraycopy(paramValues, 0, bigger, 0, paramValues.length);
+            }
+            paramValues = bigger;
+        }
+        paramValues[parameterIndex] = display;
+    }
+
+    private int internCurrentValues() {
+        if (!ctx.captureParameterValues() || paramValues == null || maxIndex == 0) {
+            return -1;
+        }
+        java.util.ArrayList<String> snapshot = new java.util.ArrayList<>(maxIndex);
+        for (int i = 1; i <= maxIndex; i++) {
+            String v = i < paramValues.length ? paramValues[i] : null;
+            snapshot.add(v == null ? "(unset)" : v);
+        }
+        return ctx.paramValuesIntern().intern(new ParameterValues(snapshot));
     }
 
     private long fingerprint() {
@@ -125,40 +158,49 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
     @Override
     public ResultSet executeQuery() throws SQLException {
         long fp = fingerprint();
+        int valuesId = internCurrentValues();
         long t0 = System.nanoTime();
         ResultSet rs = ps.executeQuery();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_QUERY, sqlId, t0, t1 - t0, -1, 0, fp);
+        ctx.emit(EXECUTE_QUERY, sqlId, t0, t1 - t0, -1, 0, fp, valuesId);
         return wrapResultSet(rs);
     }
 
     @Override
     public int executeUpdate() throws SQLException {
         long fp = fingerprint();
+        int valuesId = internCurrentValues();
         long t0 = System.nanoTime();
         int rows = ps.executeUpdate();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, rows, 0, fp);
+        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, rows, 0, fp, valuesId);
         return rows;
     }
 
     @Override
     public long executeLargeUpdate() throws SQLException {
         long fp = fingerprint();
+        int valuesId = internCurrentValues();
         long t0 = System.nanoTime();
         long rows = ps.executeLargeUpdate();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, clampRows(rows), 0, fp);
+        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, clampRows(rows), 0, fp, valuesId);
         return rows;
     }
 
     @Override
     public boolean execute() throws SQLException {
         long fp = fingerprint();
+        int valuesId = internCurrentValues();
         long t0 = System.nanoTime();
         boolean hasResultSet = ps.execute();
         long t1 = System.nanoTime();
-        emitExecuteUnknown(sqlId, t0, t1, hasResultSet, fp);
+        if (hasResultSet) {
+            ctx.emit(EXECUTE_QUERY, sqlId, t0, t1 - t0, -1, 0, fp, valuesId);
+        } else {
+            int rows = ps.getUpdateCount();
+            ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, rows, 0, fp, valuesId);
+        }
         return hasResultSet;
     }
 
@@ -194,215 +236,226 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
         return counts;
     }
 
-    // --- parameter setters: capture fingerprint + delegate ---
+    // --- parameter setters: capture fingerprint (+ display when enabled) + delegate ---
+
+    private static String bytesDisplay(byte[] x) {
+        return x == null ? "null" : "<" + x.length + " bytes>";
+    }
 
     @Override public void setNull(int parameterIndex, int sqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_NULL, sqlType);
+        setSlot(parameterIndex, TAG_NULL, sqlType, "null");
         ps.setNull(parameterIndex, sqlType);
     }
     @Override public void setNull(int parameterIndex, int sqlType, String typeName) throws SQLException {
-        setSlot(parameterIndex, TAG_NULL, sqlType ^ (typeName == null ? 0L : typeName.hashCode()));
+        setSlot(parameterIndex, TAG_NULL, sqlType ^ (typeName == null ? 0L : typeName.hashCode()), "null");
         ps.setNull(parameterIndex, sqlType, typeName);
     }
     @Override public void setBoolean(int parameterIndex, boolean x) throws SQLException {
-        setSlot(parameterIndex, TAG_BOOLEAN, x ? 1L : 0L);
+        setSlot(parameterIndex, TAG_BOOLEAN, x ? 1L : 0L, Boolean.toString(x));
         ps.setBoolean(parameterIndex, x);
     }
     @Override public void setByte(int parameterIndex, byte x) throws SQLException {
-        setSlot(parameterIndex, TAG_BYTE, x);
+        setSlot(parameterIndex, TAG_BYTE, x, Byte.toString(x));
         ps.setByte(parameterIndex, x);
     }
     @Override public void setShort(int parameterIndex, short x) throws SQLException {
-        setSlot(parameterIndex, TAG_SHORT, x);
+        setSlot(parameterIndex, TAG_SHORT, x, Short.toString(x));
         ps.setShort(parameterIndex, x);
     }
     @Override public void setInt(int parameterIndex, int x) throws SQLException {
-        setSlot(parameterIndex, TAG_INT, x);
+        setSlot(parameterIndex, TAG_INT, x, Integer.toString(x));
         ps.setInt(parameterIndex, x);
     }
     @Override public void setLong(int parameterIndex, long x) throws SQLException {
-        setSlot(parameterIndex, TAG_LONG, x);
+        setSlot(parameterIndex, TAG_LONG, x, Long.toString(x));
         ps.setLong(parameterIndex, x);
     }
     @Override public void setFloat(int parameterIndex, float x) throws SQLException {
-        setSlot(parameterIndex, TAG_FLOAT, Float.floatToIntBits(x));
+        setSlot(parameterIndex, TAG_FLOAT, Float.floatToIntBits(x), Float.toString(x));
         ps.setFloat(parameterIndex, x);
     }
     @Override public void setDouble(int parameterIndex, double x) throws SQLException {
-        setSlot(parameterIndex, TAG_DOUBLE, Double.doubleToLongBits(x));
+        setSlot(parameterIndex, TAG_DOUBLE, Double.doubleToLongBits(x), Double.toString(x));
         ps.setDouble(parameterIndex, x);
     }
     @Override public void setBigDecimal(int parameterIndex, BigDecimal x) throws SQLException {
-        setSlot(parameterIndex, TAG_BIGDECIMAL, Objects.hashCode(x));
+        setSlot(parameterIndex, TAG_BIGDECIMAL, Objects.hashCode(x), String.valueOf(x));
         ps.setBigDecimal(parameterIndex, x);
     }
     @Override public void setString(int parameterIndex, String x) throws SQLException {
-        setSlot(parameterIndex, TAG_STRING, Objects.hashCode(x));
+        setSlot(parameterIndex, TAG_STRING, Objects.hashCode(x), String.valueOf(x));
         ps.setString(parameterIndex, x);
     }
     @Override public void setBytes(int parameterIndex, byte[] x) throws SQLException {
-        setSlot(parameterIndex, TAG_BYTES, x == null ? 0L : Arrays.hashCode(x));
+        setSlot(parameterIndex, TAG_BYTES, x == null ? 0L : Arrays.hashCode(x), bytesDisplay(x));
         ps.setBytes(parameterIndex, x);
     }
     @Override public void setDate(int parameterIndex, Date x) throws SQLException {
-        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setDate(parameterIndex, x);
     }
     @Override public void setDate(int parameterIndex, Date x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setDate(parameterIndex, x, cal);
     }
     @Override public void setTime(int parameterIndex, Time x) throws SQLException {
-        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setTime(parameterIndex, x);
     }
     @Override public void setTime(int parameterIndex, Time x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setTime(parameterIndex, x, cal);
     }
     @Override public void setTimestamp(int parameterIndex, Timestamp x) throws SQLException {
-        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setTimestamp(parameterIndex, x);
     }
     @Override public void setTimestamp(int parameterIndex, Timestamp x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime());
+        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime(), String.valueOf(x));
         ps.setTimestamp(parameterIndex, x, cal);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length);
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
         ps.setAsciiStream(parameterIndex, x, length);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length);
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length, "<InputStream>");
         ps.setAsciiStream(parameterIndex, x, length);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x), "<InputStream>");
         ps.setAsciiStream(parameterIndex, x);
     }
     @Override @SuppressWarnings("deprecation")
     public void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length);
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
         ps.setUnicodeStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length);
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
         ps.setBinaryStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length);
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length, "<InputStream>");
         ps.setBinaryStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x), "<InputStream>");
         ps.setBinaryStream(parameterIndex, x);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ (long) length);
+        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ (long) length, "<Reader>");
         ps.setCharacterStream(parameterIndex, reader, length);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ length);
+        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ length, "<Reader>");
         ps.setCharacterStream(parameterIndex, reader, length);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader));
+        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader), "<Reader>");
         ps.setCharacterStream(parameterIndex, reader);
     }
     @Override public void setNCharacterStream(int parameterIndex, Reader value, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value) ^ length);
+        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value) ^ length, "<Reader>");
         ps.setNCharacterStream(parameterIndex, value, length);
     }
     @Override public void setNCharacterStream(int parameterIndex, Reader value) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value));
+        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value), "<Reader>");
         ps.setNCharacterStream(parameterIndex, value);
     }
     @Override public void clearParameters() throws SQLException {
         if (paramHashes != null) {
             Arrays.fill(paramHashes, 0L);
         }
+        if (paramValues != null) {
+            Arrays.fill(paramValues, null);
+        }
+        maxIndex = 0;
         ps.clearParameters();
     }
     @Override public void setObject(int parameterIndex, Object x, int targetSqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ (long) targetSqlType);
+        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ (long) targetSqlType, String.valueOf(x));
         ps.setObject(parameterIndex, x, targetSqlType);
     }
     @Override public void setObject(int parameterIndex, Object x) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x));
+        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x), String.valueOf(x));
         ps.setObject(parameterIndex, x);
     }
     @Override public void setObject(int parameterIndex, Object x, int targetSqlType, int scaleOrLength) throws SQLException {
         setSlot(parameterIndex, TAG_OBJECT,
-                Objects.hashCode(x) ^ ((long) targetSqlType << 32) ^ scaleOrLength);
+                Objects.hashCode(x) ^ ((long) targetSqlType << 32) ^ scaleOrLength,
+                String.valueOf(x));
         ps.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
     }
     @Override public void setObject(int parameterIndex, Object x, SQLType targetSqlType, int scaleOrLength) throws SQLException {
         setSlot(parameterIndex, TAG_OBJECT,
-                Objects.hashCode(x) ^ Objects.hashCode(targetSqlType) ^ scaleOrLength);
+                Objects.hashCode(x) ^ Objects.hashCode(targetSqlType) ^ scaleOrLength,
+                String.valueOf(x));
         ps.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
     }
     @Override public void setObject(int parameterIndex, Object x, SQLType targetSqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ Objects.hashCode(targetSqlType));
+        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ Objects.hashCode(targetSqlType),
+                String.valueOf(x));
         ps.setObject(parameterIndex, x, targetSqlType);
     }
     @Override public void setRef(int parameterIndex, Ref x) throws SQLException {
-        setSlot(parameterIndex, TAG_REF, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_REF, System.identityHashCode(x), "<Ref>");
         ps.setRef(parameterIndex, x);
     }
     @Override public void setBlob(int parameterIndex, Blob x) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(x), "<Blob>");
         ps.setBlob(parameterIndex, x);
     }
     @Override public void setBlob(int parameterIndex, InputStream inputStream, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream) ^ length);
+        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream) ^ length, "<Blob>");
         ps.setBlob(parameterIndex, inputStream, length);
     }
     @Override public void setBlob(int parameterIndex, InputStream inputStream) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream));
+        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream), "<Blob>");
         ps.setBlob(parameterIndex, inputStream);
     }
     @Override public void setClob(int parameterIndex, Clob x) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(x), "<Clob>");
         ps.setClob(parameterIndex, x);
     }
     @Override public void setClob(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader) ^ length);
+        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader) ^ length, "<Clob>");
         ps.setClob(parameterIndex, reader, length);
     }
     @Override public void setClob(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader));
+        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader), "<Clob>");
         ps.setClob(parameterIndex, reader);
     }
     @Override public void setNClob(int parameterIndex, NClob value) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(value));
+        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(value), "<NClob>");
         ps.setNClob(parameterIndex, value);
     }
     @Override public void setNClob(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader) ^ length);
+        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader) ^ length, "<NClob>");
         ps.setNClob(parameterIndex, reader, length);
     }
     @Override public void setNClob(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader));
+        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader), "<NClob>");
         ps.setNClob(parameterIndex, reader);
     }
     @Override public void setArray(int parameterIndex, Array x) throws SQLException {
-        setSlot(parameterIndex, TAG_ARRAY, System.identityHashCode(x));
+        setSlot(parameterIndex, TAG_ARRAY, System.identityHashCode(x), "<Array>");
         ps.setArray(parameterIndex, x);
     }
     @Override public void setURL(int parameterIndex, URL x) throws SQLException {
-        setSlot(parameterIndex, TAG_URL, Objects.hashCode(x));
+        setSlot(parameterIndex, TAG_URL, Objects.hashCode(x), String.valueOf(x));
         ps.setURL(parameterIndex, x);
     }
     @Override public void setRowId(int parameterIndex, RowId x) throws SQLException {
-        setSlot(parameterIndex, TAG_ROWID, Objects.hashCode(x));
+        setSlot(parameterIndex, TAG_ROWID, Objects.hashCode(x), String.valueOf(x));
         ps.setRowId(parameterIndex, x);
     }
     @Override public void setNString(int parameterIndex, String value) throws SQLException {
-        setSlot(parameterIndex, TAG_NSTRING, Objects.hashCode(value));
+        setSlot(parameterIndex, TAG_NSTRING, Objects.hashCode(value), String.valueOf(value));
         ps.setNString(parameterIndex, value);
     }
     @Override public void setSQLXML(int parameterIndex, SQLXML xmlObject) throws SQLException {
-        setSlot(parameterIndex, TAG_SQLXML, System.identityHashCode(xmlObject));
+        setSlot(parameterIndex, TAG_SQLXML, System.identityHashCode(xmlObject), "<SQLXML>");
         ps.setSQLXML(parameterIndex, xmlObject);
     }
 

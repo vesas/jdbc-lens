@@ -1,6 +1,7 @@
 package io.github.vesas.jdbcprof.storage;
 
 import io.github.vesas.jdbcprof.capture.Event;
+import io.github.vesas.jdbcprof.capture.ParameterValues;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
 
 import java.io.Closeable;
@@ -104,6 +105,40 @@ public final class BinaryLogWriter implements Closeable {
     }
 
     /**
+     * Emit a parameter-values intern-table delta. Each entry is a list
+     * of UTF-8 display strings, one per bound PreparedStatement index.
+     * Only written when {@code captureParameterValues} is enabled.
+     */
+    public void writeParamValuesDelta(int firstId, List<ParameterValues> entries) throws IOException {
+        if (entries.isEmpty()) {
+            return;
+        }
+        byte[][][] encoded = new byte[entries.size()][][];
+        int payloadLen = 4 + 4; // firstId + count
+        for (int i = 0; i < entries.size(); i++) {
+            List<String> slots = entries.get(i).slots();
+            encoded[i] = new byte[slots.size()][];
+            payloadLen += 4; // slot count
+            for (int j = 0; j < slots.size(); j++) {
+                encoded[i][j] = slots.get(j).getBytes(StandardCharsets.UTF_8);
+                payloadLen += 4 + encoded[i][j].length;
+            }
+        }
+        put1(LogFormat.REC_PARAM_VALUES_DELTA);
+        put4(payloadLen);
+        put4(firstId);
+        put4(entries.size());
+        for (int i = 0; i < entries.size(); i++) {
+            byte[][] slots = encoded[i];
+            put4(slots.length);
+            for (byte[] bytes : slots) {
+                put4(bytes.length);
+                putBytes(bytes);
+            }
+        }
+    }
+
+    /**
      * Emit a stack-trace intern-table delta. Analogous to
      * {@link #writeSqlDelta}.
      */
@@ -172,7 +207,8 @@ public final class BinaryLogWriter implements Closeable {
         put4(e.rowsAffected);
         put4(e.batchSize);
         put8(e.parameterFingerprint);
-        // 3 bytes of padding to land on a 56-byte boundary.
+        put4(e.parameterValuesId);
+        // 3 bytes of padding to land on a 60-byte boundary.
         put1((byte) 0);
         put1((byte) 0);
         put1((byte) 0);

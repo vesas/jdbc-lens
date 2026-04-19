@@ -3,6 +3,8 @@ package io.github.vesas.jdbcprof.sink;
 import io.github.vesas.jdbcprof.capture.CaptureContext;
 import io.github.vesas.jdbcprof.capture.Event;
 import io.github.vesas.jdbcprof.capture.OperationInternTable;
+import io.github.vesas.jdbcprof.capture.ParameterValues;
+import io.github.vesas.jdbcprof.capture.ParameterValuesInternTable;
 import io.github.vesas.jdbcprof.capture.SpscRingBuffer;
 import io.github.vesas.jdbcprof.capture.SqlInternTable;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
@@ -38,6 +40,7 @@ public final class Sink {
     private int lastSqlId;
     private int lastStackId;
     private int lastOpId;
+    private int lastParamValuesId;
 
     private volatile Thread worker;
     private volatile boolean stopping;
@@ -92,6 +95,7 @@ public final class Sink {
         flushSqlDelta();
         flushStackDelta();
         flushOpDelta();
+        flushParamValuesDelta();
         flushEvents();
     }
 
@@ -119,6 +123,15 @@ public final class Sink {
         if (!delta.isEmpty()) {
             writer.writeOpDelta(lastOpId, delta);
             lastOpId += delta.size();
+        }
+    }
+
+    private void flushParamValuesDelta() throws IOException {
+        ParameterValuesInternTable intern = ctx.paramValuesIntern();
+        List<ParameterValues> delta = intern.entriesSince(lastParamValuesId);
+        if (!delta.isEmpty()) {
+            writer.writeParamValuesDelta(lastParamValuesId, delta);
+            lastParamValuesId += delta.size();
         }
     }
 

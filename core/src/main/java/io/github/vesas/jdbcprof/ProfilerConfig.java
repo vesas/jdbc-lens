@@ -9,12 +9,14 @@ import java.util.List;
  * <p>Defaults mirror the spec. No validation is performed yet; validation
  * moves in when {@link Profiler#start(ProfilerConfig)} becomes real.
  *
- * @param outputFile         path of the binary recording (spec §7)
- * @param ringBufferCapacity events per thread-local ring (spec §5.6 — default 65_536)
- * @param stackDepthLimit    max frames captured per event (spec §5.4 — default 30)
- * @param frameExclusions    packages/classes walked past during attribution (spec §8.1)
- * @param n1MinCount         minimum repetitions before a template is an N+1 candidate (spec §8.3 — default 10)
- * @param n1AncestorFraction fraction of repetitions that must share an ancestor frame (spec §8.3 — default 0.9)
+ * @param outputFile              path of the binary recording (spec §7)
+ * @param ringBufferCapacity      events per thread-local ring (spec §5.6 — default 65_536)
+ * @param stackDepthLimit         max frames captured per event (spec §5.4 — default 30)
+ * @param frameExclusions         packages/classes walked past during attribution (spec §8.1)
+ * @param n1MinCount              minimum repetitions before a template is an N+1 candidate (spec §8.3 — default 10)
+ * @param n1AncestorFraction      fraction of repetitions that must share an ancestor frame (spec §8.3 — default 0.9)
+ * @param captureParameterValues  opt-in (spec §11 Phase 4): when true, the capture path records each PreparedStatement
+ *                                parameter value as a display string. Off by default because values can be PII.
  */
 public record ProfilerConfig(
         Path outputFile,
@@ -22,7 +24,8 @@ public record ProfilerConfig(
         int stackDepthLimit,
         List<String> frameExclusions,
         int n1MinCount,
-        double n1AncestorFraction) {
+        double n1AncestorFraction,
+        boolean captureParameterValues) {
 
     private static final List<String> DEFAULT_EXCLUSIONS = List.of(
             "java.sql.",
@@ -46,7 +49,14 @@ public record ProfilerConfig(
                 30,
                 DEFAULT_EXCLUSIONS,
                 10,
-                0.9);
+                0.9,
+                false);
+    }
+
+    /** Returns a copy of this config with parameter value capture toggled. */
+    public ProfilerConfig withCaptureParameterValues(boolean capture) {
+        return new ProfilerConfig(outputFile, ringBufferCapacity, stackDepthLimit,
+                frameExclusions, n1MinCount, n1AncestorFraction, capture);
     }
 
     /**

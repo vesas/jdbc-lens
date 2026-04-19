@@ -33,6 +33,13 @@ public final class Event {
      */
     public long parameterFingerprint;
 
+    /**
+     * Id into {@link ParameterValuesInternTable} when value capture
+     * is enabled ({@code ProfilerConfig.captureParameterValues}); {@code
+     * -1} otherwise.
+     */
+    public int parameterValuesId;
+
     public Event() {
         // Fields default to zero; rowsAffected stays 0 until set by the producer.
     }
@@ -48,6 +55,7 @@ public final class Event {
         rowsAffected = 0;
         batchSize = 0;
         parameterFingerprint = 0L;
+        parameterValuesId = -1;
     }
 
     public void copyFrom(Event other) {
@@ -61,5 +69,6 @@ public final class Event {
         this.rowsAffected = other.rowsAffected;
         this.batchSize = other.batchSize;
         this.parameterFingerprint = other.parameterFingerprint;
+        this.parameterValuesId = other.parameterValuesId;
     }
 }

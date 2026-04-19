@@ -43,7 +43,8 @@ public final class Profiler {
                 throw new IllegalStateException("Profiler already started");
             }
             CaptureContext ctx = new CaptureContext(
-                    config.ringBufferCapacity(), config.stackDepthLimit());
+                    config.ringBufferCapacity(), config.stackDepthLimit(),
+                    config.captureParameterValues());
             BinaryLogWriter writer;
             try {
                 writer = new BinaryLogWriter(config.outputFile());

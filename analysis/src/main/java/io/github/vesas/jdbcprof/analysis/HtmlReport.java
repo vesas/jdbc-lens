@@ -2,6 +2,7 @@ package io.github.vesas.jdbcprof.analysis;
 
 import io.github.vesas.jdbcprof.capture.Event;
 import io.github.vesas.jdbcprof.capture.EventType;
+import io.github.vesas.jdbcprof.capture.ParameterValues;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
 import io.github.vesas.jdbcprof.storage.BinaryLogReader;
 
@@ -47,7 +48,7 @@ public final class HtmlReport {
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
-        renderRedundant(out, redundant);
+        renderRedundant(out, redundant, m);
         renderOperations(out, m);
         renderFlameGraph(out, flame);
         renderPairsTable(out, m);
@@ -56,7 +57,7 @@ public final class HtmlReport {
         renderFooter(out);
     }
 
-    private static void renderRedundant(PrintStream out, List<RedundantFinding> findings) {
+    private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, Model m) {
         out.println("<h2>Redundant queries</h2>");
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No repeated (template, parameters) pairs "
@@ -64,6 +65,7 @@ public final class HtmlReport {
                     + "<code>Profiler.currentOperation(\"name\")</code> to scope detection.</p>");
             return;
         }
+        boolean valuesCaptured = !m.paramValuesById.isEmpty();
         out.println("<div class=\"findings\">");
         for (RedundantFinding f : findings) {
             out.println("  <div class=\"finding\">");
@@ -81,10 +83,41 @@ public final class HtmlReport {
                     + "</dd>");
             out.println("      <dt>call-site</dt><dd>"
                     + htmlEscape(formatFrame(f.callSite())) + "</dd>");
+            String valuesRow = renderValues(f, m, valuesCaptured);
+            if (valuesRow != null) {
+                out.println(valuesRow);
+            }
             out.println("    </dl>");
             out.println("  </div>");
         }
         out.println("</div>");
+    }
+
+    private static String renderValues(RedundantFinding f, Model m, boolean valuesCaptured) {
+        RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
+                f.opId(), f.sqlId(), f.parameterFingerprint(), f.stackTraceId());
+        Integer id = m.valuesIdForKey.get(key);
+        if (id == null || !valuesCaptured) {
+            if (!valuesCaptured) {
+                return "      <dt>params</dt><dd class=\"muted\">(not captured \u2014 "
+                        + "enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>)"
+                        + "</dd>";
+            }
+            return null;
+        }
+        ParameterValues pv = m.paramValuesById.get(id);
+        if (pv == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("      <dt>params</dt><dd><code class=\"sql\">");
+        List<String> slots = pv.slots();
+        for (int i = 0; i < slots.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(htmlEscape("[" + (i + 1) + "] " + slots.get(i)));
+        }
+        sb.append("</code></dd>");
+        return sb.toString();
     }
 
     private static void renderOperations(PrintStream out, Model m) {
@@ -169,6 +202,14 @@ public final class HtmlReport {
         // Count + duration per (op-id, sql-id, fingerprint, stack-id)
         // so the redundant-query detector has what it needs.
         Map<RedundantQueryDetector.Key, RedundantQueryDetector.Stats> redundant = new HashMap<>();
+        // Populated only when the recording was produced with
+        // captureParameterValues = true. Otherwise empty, and the
+        // report renders a hint about how to turn value capture on.
+        Map<Integer, ParameterValues> paramValuesById = new HashMap<>();
+        // (execute-event-key) -> one paramValuesId seen for this key.
+        // Used by the report to pair a redundant-queries card with the
+        // actual bound values.
+        Map<RedundantQueryDetector.Key, Integer> valuesIdForKey = new HashMap<>();
 
         static Model load(Path input) throws IOException {
             Model m = new Model();
@@ -193,6 +234,13 @@ public final class HtmlReport {
                 public void onOpDelta(int firstId, List<String> names) {
                     for (int i = 0; i < names.size(); i++) {
                         m.ops.put((long) (firstId + i), names.get(i));
+                    }
+                }
+
+                @Override
+                public void onParamValuesDelta(int firstId, List<ParameterValues> entries) {
+                    for (int i = 0; i < entries.size(); i++) {
+                        m.paramValuesById.put(firstId + i, entries.get(i));
                     }
                 }
 
@@ -232,6 +280,9 @@ public final class HtmlReport {
                                     key, k -> new RedundantQueryDetector.Stats());
                             rs.count++;
                             rs.totalDurationNanos += dur;
+                            if (e.parameterValuesId >= 0) {
+                                m.valuesIdForKey.putIfAbsent(key, e.parameterValuesId);
+                            }
                         }
                     }
                 }
