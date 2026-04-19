@@ -1,5 +1,6 @@
 package io.github.vesas.jdbcprof.sample.service;
 
+import io.github.vesas.jdbcprof.sample.dao.AuditDao;
 import io.github.vesas.jdbcprof.sample.dao.CustomerDao;
 import io.github.vesas.jdbcprof.sample.dao.OrderDao;
 import io.github.vesas.jdbcprof.sample.dao.SettingsDao;
@@ -14,11 +15,14 @@ public final class OrderService {
     private final OrderDao orders;
     private final CustomerDao customers;
     private final SettingsDao settings;
+    private final NotificationService notifications;
 
-    public OrderService(OrderDao orders, CustomerDao customers, SettingsDao settings) {
+    public OrderService(OrderDao orders, CustomerDao customers, SettingsDao settings,
+                        NotificationService notifications) {
         this.orders = orders;
         this.customers = customers;
         this.settings = settings;
+        this.notifications = notifications;
     }
 
     /**
@@ -48,5 +52,19 @@ public final class OrderService {
             settings.getByKey(c, "max_order_value");
             orders.insert(c, cid, unitPrice);
         }
+    }
+
+    /**
+     * Realistic multi-step flow the drill-down page is meant to
+     * showcase. One invocation produces: validate → two settings
+     * lookups → insert order → two audit writes. The call chain into
+     * {@link AuditDao#log} is three services deep.
+     */
+    public void completeCheckout(Connection c, int customerId, BigDecimal amount) throws SQLException {
+        customers.findById(c, customerId);
+        settings.getByKey(c, "max_order_value");
+        settings.getByKey(c, "default_currency");
+        orders.insert(c, customerId, amount);
+        notifications.recordCheckout(c, customerId, amount);
     }
 }

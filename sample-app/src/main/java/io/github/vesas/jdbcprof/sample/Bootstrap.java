@@ -26,6 +26,9 @@ final class Bootstrap {
             s.execute("INSERT INTO settings (k, v) VALUES "
                     + "('max_order_value', '10000'), "
                     + "('default_currency', 'EUR')");
+            s.execute("CREATE TABLE audit ("
+                    + "id INT AUTO_INCREMENT PRIMARY KEY, "
+                    + "kind VARCHAR(50), payload VARCHAR(500), ts TIMESTAMP)");
         }
     }
 }
