@@ -91,4 +91,37 @@ class TemplateShapeTest {
         assertThat(s.table()).isEqualTo("customers");
         assertThat(s.columnsByParamIdx()).containsExactly(Map.entry(1, "id"));
     }
+
+    @Test
+    void kindIsRecognisedForEachStatementShape() {
+        assertThat(TemplateShape.of("SELECT a FROM t WHERE id = ?").kind())
+                .isEqualTo(TemplateShape.Kind.SELECT);
+        assertThat(TemplateShape.of("UPDATE t SET a = ? WHERE id = ?").kind())
+                .isEqualTo(TemplateShape.Kind.UPDATE);
+        assertThat(TemplateShape.of("DELETE FROM t WHERE id = ?").kind())
+                .isEqualTo(TemplateShape.Kind.DELETE);
+    }
+
+    @Test
+    void setColumnsExtractedForUpdate() {
+        TemplateShape s = TemplateShape.of(
+                "UPDATE customers SET name = ?, email = ?, phone = ? WHERE id = ?");
+        assertThat(s).isNotNull();
+        assertThat(s.setColumns()).containsExactly("name", "email", "phone");
+    }
+
+    @Test
+    void setColumnParseTolerantOfFunctionsWithCommas() {
+        // Commas inside parens mustn't be treated as SET-column separators.
+        TemplateShape s = TemplateShape.of(
+                "UPDATE t SET last_touched = GREATEST(a, b), counter = counter + 1 WHERE id = ?");
+        assertThat(s).isNotNull();
+        assertThat(s.setColumns()).containsExactly("last_touched", "counter");
+    }
+
+    @Test
+    void setColumnsEmptyForSelectAndDelete() {
+        assertThat(TemplateShape.of("SELECT a FROM t WHERE id = ?").setColumns()).isEmpty();
+        assertThat(TemplateShape.of("DELETE FROM t WHERE id = ?").setColumns()).isEmpty();
+    }
 }

@@ -51,16 +51,21 @@ public final class HtmlReport {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
                 .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
-        List<EntityFinding> entities = EntityAccessAudit.detect(
-                new EntityAccessAudit.Inputs(
-                        m.eventsByOp, m.sqls, m.stacks,
-                        m.paramValuesById, m.ops, NO_OPERATION));
+        EntityAccessAudit.Inputs entityInputs = new EntityAccessAudit.Inputs(
+                m.eventsByOp, m.sqls, m.stacks,
+                m.paramValuesById, m.ops, NO_OPERATION);
+        List<EntityFinding> entities = EntityAccessAudit.detect(entityInputs);
+        List<ReadThenWriteFinding> readThenWrite = ReadThenWriteDetector.detect(entityInputs);
+        List<OverWideUpdateFinding> overWide = new OverWideUpdateDetector()
+                .detect(m.sqls, m.eventsByOp, m.stacks);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
         renderRedundant(out, redundant, m);
         renderEntityAccess(out, entities, m);
+        renderReadThenWrite(out, readThenWrite, m);
+        renderOverWideUpdate(out, overWide);
         renderOperations(out, m);
         renderFlameGraph(out, flame);
         renderPairsTable(out, m);
@@ -197,6 +202,93 @@ public final class HtmlReport {
             out.println("      </dd>");
             out.println("      <dt>suggestion</dt><dd class=\"muted\">"
                     + "Fetch all columns once and pass the row through the call chain.</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static void renderReadThenWrite(PrintStream out,
+                                             List<ReadThenWriteFinding> findings, Model m) {
+        out.println("<h2>Read-then-write on the same row</h2>");
+        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
+            out.println("<p class=\"findings-empty\">Parameter values weren't captured; "
+                    + "can't match SELECT + UPDATE on the same key. Enable with "
+                    + "<code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
+            return;
+        }
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No SELECT + UPDATE/DELETE pair on the "
+                    + "same row inside the same operation.</p>");
+            return;
+        }
+        out.println("<div class=\"findings\">");
+        for (ReadThenWriteFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            String entityLabel = f.table() + "." + f.column() + " = " + f.value();
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">READ \u2192 WRITE</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(
+                            f.readDurationNanos() + f.writeDurationNanos()))
+                    + " total"
+                    + (f.betweenNanos() > 0
+                        ? " \u00B7 " + htmlEscape(formatDuration(f.betweenNanos())) + " app time between"
+                        : "")
+                    + "</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>entity</dt><dd><code class=\"site\">"
+                    + htmlEscape(entityLabel) + "</code></dd>");
+            out.println("      <dt>operation</dt><dd>"
+                    + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                    + "</dd>");
+            out.println("      <dt>read</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.readSql() == null ? "sql[" + f.readSqlId() + "]" : f.readSql())
+                    + "</code> <span class=\"muted\">\u2014 "
+                    + htmlEscape(formatFrame(f.readCallSite()))
+                    + "</span></dd>");
+            out.println("      <dt>write</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.writeSql() == null ? "sql[" + f.writeSqlId() + "]" : f.writeSql())
+                    + "</code> <span class=\"muted\">\u2014 "
+                    + htmlEscape(formatFrame(f.writeCallSite()))
+                    + "</span></dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Collapse into one UPDATE (with the read's conditions moved into its WHERE) "
+                    + "or one <code>UPDATE \u2026 RETURNING</code>.</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static void renderOverWideUpdate(PrintStream out,
+                                             List<OverWideUpdateFinding> findings) {
+        out.println("<h2>Wide UPDATEs (REWRITE RECORD smell)</h2>");
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No UPDATE template sets more than "
+                    + OverWideUpdateDetector.DEFAULT_THRESHOLD + " columns.</p>");
+            return;
+        }
+        out.println("<div class=\"findings\">");
+        for (OverWideUpdateFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">" + f.setColumnCount() + " columns SET</span> "
+                    + "<span class=\"finding-time\">"
+                    + f.executeCount() + " executions \u00B7 "
+                    + htmlEscape(formatDuration(f.totalDurationNanos()))
+                    + "</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>template</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.sql() == null ? "sql[" + f.sqlId() + "]" : f.sql())
+                    + "</code></dd>");
+            out.println("      <dt>call-site</dt><dd>"
+                    + htmlEscape(formatFrame(f.representativeSite()))
+                    + "</dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Only SET the columns that actually changed. Every wide UPDATE fires "
+                    + "triggers, CDC, and replication for no-op changes and muddies audit "
+                    + "diffs.</dd>");
             out.println("    </dl>");
             out.println("  </div>");
         }
