@@ -3,6 +3,21 @@
 Records every JDBC query your app runs, attributes it to the call-site
 in your code, and produces an HTML report.
 
+## Try it in 30 seconds
+
+A bundled sample app talks to H2 and runs a classic N+1 loop under
+the profiler:
+
+```
+./gradlew :sample-app:run
+./gradlew :analysis:run --args="sample-app/sample-recording.jdbclog -o sample-app/sample-report.html"
+```
+
+Open `sample-app/sample-report.html` in any browser. Look at
+`Main.classicN1Loop:84` in the `(call-site, template) pairs` table —
+that's the 50× repeated `SELECT name FROM customers WHERE id = ?`
+the profiler flagged.
+
 ## Use it in another project
 
 ### 1. Publish the library to your Maven Local (one-off)
