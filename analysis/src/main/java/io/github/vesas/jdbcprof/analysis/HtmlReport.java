@@ -41,13 +41,22 @@ public final class HtmlReport {
     public static void write(Path input, PrintStream out) throws IOException {
         Model m = Model.load(input);
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
+        FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
+        renderFlameGraph(out, flame);
         renderPairsTable(out, m);
         renderCallSitesTable(out, m);
         renderTemplatesTable(out, m);
         renderFooter(out);
+    }
+
+    private static void renderFlameGraph(PrintStream out, FlameGraph.Node root) {
+        out.println("<h2>Flamegraph</h2>");
+        out.println("<p class=\"findings-empty\">"
+                + "Widths are total DB time. Hover any frame for its full class + line.</p>");
+        FlameGraph.renderHtml(out, root);
     }
 
     private static final class Model {
@@ -204,6 +213,50 @@ public final class HtmlReport {
                 .finding-kv dt { color: var(--fg-muted); }
                 .finding-kv dd { margin: 0; font-family: var(--mono); word-break: break-word; }
                 .findings-empty { color: var(--fg-muted); font-size: 13px; font-style: italic; }
+                .fg {
+                  border: 1px solid var(--border);
+                  border-radius: 4px;
+                  background: var(--border);
+                  font-family: var(--mono);
+                  font-size: 11px;
+                  overflow: hidden;
+                  margin-top: 10px;
+                }
+                .fg-node {
+                  display: flex;
+                  flex-direction: column;
+                  min-width: 1px;
+                  overflow: hidden;
+                }
+                .fg-root { width: 100%; }
+                .fg-children {
+                  display: flex;
+                  flex-direction: row;
+                  width: 100%;
+                  gap: 1px;
+                  background: var(--border);
+                }
+                .fg-children > .fg-node {
+                  flex-grow: var(--w);
+                  flex-shrink: 1;
+                  flex-basis: 0;
+                }
+                .fg-label {
+                  background: hsl(var(--hue, 210), 55%, 72%);
+                  color: #1b1f23;
+                  padding: 3px 6px;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  line-height: 1.5;
+                  cursor: default;
+                }
+                .fg-root > .fg-label {
+                  background: var(--bg-alt);
+                  color: var(--fg-muted);
+                  font-size: 12px;
+                  border-bottom: 1px solid var(--border);
+                }
                 table {
                   width: 100%;
                   border-collapse: collapse;

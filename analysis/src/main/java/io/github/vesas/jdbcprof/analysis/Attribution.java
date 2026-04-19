@@ -99,6 +99,17 @@ public final class Attribution {
         return null;
     }
 
+    /**
+     * True if the frame looks like application code — not JDK, not
+     * profiler/JDBC infrastructure. Other analysis passes that want to
+     * walk only the application portion of a stack (flamegraph,
+     * ancestor search) share this predicate so the meaning of
+     * "application frame" stays consistent across the module.
+     */
+    public static boolean isApplicationFrame(StackFrameSnapshot f) {
+        return f != null && !isJdk(f) && !isInfra(f);
+    }
+
     private static boolean matchesAny(StackFrameSnapshot f, List<String> prefixes) {
         String cls = f.className();
         // Index-based loop: avoids the Iterator allocation the report
