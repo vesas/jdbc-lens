@@ -41,7 +41,11 @@ class TextDumperTest {
                     .contains("Events: 2")
                     .contains("PREPARE")
                     .contains("EXECUTE_QUERY")
-                    .contains("T42");
+                    .contains("T42")
+                    .contains("Summary")
+                    .contains("(call-site, template):")
+                    .contains("call-site:")
+                    .contains("template:");
         } finally {
             Files.deleteIfExists(tmp);
         }
