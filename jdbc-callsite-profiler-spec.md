@@ -228,12 +228,4 @@ Subsequent phases (Java agent variant, streaming mode for long-running captures,
 
 ## 12. Performance validation plan
 
-Because the 5 μs hot-path target is the spec's central claim, validation is a first-class concern, not an afterthought.
-
 Benchmark harness: JMH, with a mock `DataSource` that executes a no-op query returning instantly. Measure the wrapped-vs-unwrapped difference. This isolates the profiler overhead from real JDBC cost.
-
-Scenarios: single-threaded simple statement, single-threaded prepared statement with parameters, multi-threaded mix (10 threads hammering), cold-start vs warmed-up (intern tables populated), with and without operation-id set.
-
-Reporting: each scenario produces a mean and 99th-percentile overhead in nanoseconds. The mean target is 5 μs; the 99th percentile target is 20 μs (allowing for occasional intern-table resizes and GC interactions).
-
-If a scenario fails the target, the profiler enters an investigation cycle before proceeding — flamegraph the profiler itself, identify the hot spot, fix it, rerun. This discipline is what keeps the claim honest.

@@ -1,56 +1,121 @@
 package io.github.vesas.jdbcprof;
 
+import io.github.vesas.jdbcprof.capture.CaptureContext;
+import io.github.vesas.jdbcprof.capture.CapturingDataSource;
+import io.github.vesas.jdbcprof.sink.Sink;
+import io.github.vesas.jdbcprof.storage.BinaryLogWriter;
+
 import javax.sql.DataSource;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 
 /**
- * Public entry points for the JDBC call-site profiler. See spec §10.
+ * Public entry points for the JDBC call-site profiler (spec §10).
  *
- * <p>All methods are stubs at this stage — Phase 1 (capture + storage)
- * fills them in. The shape is frozen so downstream adapters and docs
- * can compile against it.
+ * <p>Lifecycle: {@link #start(ProfilerConfig)} installs a session,
+ * {@link #wrap(DataSource)} binds application DataSources to it,
+ * {@link #stop()} drains and closes the recording. The session is a
+ * process-wide singleton — there is no scenario in Phase 1 for
+ * multiple concurrent recordings.
+ *
+ * <p>A JVM shutdown hook calls {@link #stop()} automatically so a
+ * recording is flushed even if the application terminates without
+ * an orderly teardown.
  */
 public final class Profiler {
+
+    private static volatile Session session;
+    private static final Object LOCK = new Object();
 
     private Profiler() {
     }
 
     /**
-     * Wraps a real {@link DataSource} so that every JDBC operation
-     * performed through it is recorded. The only required integration
-     * step for applications.
-     */
-    public static DataSource wrap(DataSource real) {
-        if (real == null) {
-            throw new IllegalArgumentException("real DataSource must not be null");
-        }
-        throw new UnsupportedOperationException("phase 1 not implemented");
-    }
-
-    /**
-     * Begins recording. Must be called once before any wrapped
-     * DataSource produces events that should be captured.
+     * Begins recording. Must be called before {@link #wrap(DataSource)}
+     * so that wrapped DataSources bind to a live session.
      */
     public static void start(ProfilerConfig config) {
         if (config == null) {
             throw new IllegalArgumentException("config must not be null");
         }
-        throw new UnsupportedOperationException("phase 1 not implemented");
+        synchronized (LOCK) {
+            if (session != null) {
+                throw new IllegalStateException("Profiler already started");
+            }
+            CaptureContext ctx = new CaptureContext(
+                    config.ringBufferCapacity(), config.stackDepthLimit());
+            BinaryLogWriter writer;
+            try {
+                writer = new BinaryLogWriter(config.outputFile());
+            } catch (IOException e) {
+                throw new UncheckedIOException("failed to open " + config.outputFile(), e);
+            }
+            Sink sink = new Sink(ctx, writer);
+            Thread hook = new Thread(Profiler::stopQuietly, "jdbcprof-shutdown");
+            Runtime.getRuntime().addShutdownHook(hook);
+            session = new Session(ctx, sink, hook);
+            sink.start();
+        }
     }
 
     /**
-     * Flushes buffers, closes the output file, stops the sink thread.
-     * Also runs automatically on JVM shutdown via a hook.
+     * Flushes buffers, closes the recording, and stops the sink thread.
+     * Safe to call multiple times — subsequent calls after the first
+     * successful stop are no-ops.
      */
     public static void stop() {
-        throw new UnsupportedOperationException("phase 1 not implemented");
+        Session s;
+        synchronized (LOCK) {
+            s = session;
+            if (s == null) {
+                return;
+            }
+            session = null;
+        }
+        try {
+            Runtime.getRuntime().removeShutdownHook(s.shutdownHook);
+        } catch (IllegalStateException ignored) {
+            // JVM already shutting down — the hook is running us.
+        }
+        try {
+            s.sink.stop();
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to stop profiler", e);
+        }
+    }
+
+    /**
+     * Wraps a real {@link DataSource} so every JDBC operation flowing
+     * through it is captured. Requires {@link #start(ProfilerConfig)}
+     * to have been called; events from a DataSource wrapped before
+     * {@code start} have nowhere to go.
+     */
+    public static DataSource wrap(DataSource real) {
+        if (real == null) {
+            throw new IllegalArgumentException("real DataSource must not be null");
+        }
+        Session s = session;
+        if (s == null) {
+            throw new IllegalStateException("Profiler.start() must be called before wrap()");
+        }
+        return new CapturingDataSource(real, s.ctx);
     }
 
     /**
      * Sets a thread-local operation id used to scope N+1 detection
-     * (spec §3, §8.3). Typically invoked from request/message/test
-     * boundaries.
+     * (spec §3, §8.3). Phase 3.
      */
     public static void currentOperation(String operationId) {
         throw new UnsupportedOperationException("phase 3 not implemented");
     }
+
+    private static void stopQuietly() {
+        try {
+            stop();
+        } catch (RuntimeException ignored) {
+            // Shutdown-hook failure must not prevent JVM exit.
+        }
+    }
+
+    private record Session(CaptureContext ctx, Sink sink, Thread shutdownHook) {}
 }

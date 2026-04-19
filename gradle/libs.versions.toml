@@ -4,6 +4,7 @@ assertj = "3.26.3"
 jmh = "1.37"
 picocli = "4.7.6"
 jmh-gradle-plugin = "0.7.2"
+h2 = "2.3.232"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
@@ -12,6 +13,7 @@ assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
 jmh-annotations = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }
 
 [plugins]
 jmh = { id = "me.champeau.jmh", version.ref = "jmh-gradle-plugin" }
