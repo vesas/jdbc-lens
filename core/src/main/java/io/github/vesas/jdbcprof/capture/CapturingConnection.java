@@ -53,7 +53,7 @@ final class CapturingConnection implements Connection {
 
     private PreparedStatement wrap(PreparedStatement real, int sqlId,
                                    long startNanos, long durationNanos) {
-        ctx.emit(PREPARE, sqlId, startNanos, durationNanos, -1, 0);
+        ctx.emit(PREPARE, sqlId, startNanos, durationNanos, -1, 0, 0L);
         return new CapturingPreparedStatement(real, ctx, sqlId);
     }
 
@@ -158,7 +158,7 @@ final class CapturingConnection implements Connection {
         long t0 = System.nanoTime();
         delegate.commit();
         long t1 = System.nanoTime();
-        ctx.emit(COMMIT, -1, t0, t1 - t0, -1, 0);
+        ctx.emit(COMMIT, -1, t0, t1 - t0, -1, 0, 0L);
     }
 
     @Override
@@ -166,7 +166,7 @@ final class CapturingConnection implements Connection {
         long t0 = System.nanoTime();
         delegate.rollback();
         long t1 = System.nanoTime();
-        ctx.emit(ROLLBACK, -1, t0, t1 - t0, -1, 0);
+        ctx.emit(ROLLBACK, -1, t0, t1 - t0, -1, 0, 0L);
     }
 
     @Override
@@ -174,7 +174,7 @@ final class CapturingConnection implements Connection {
         long t0 = System.nanoTime();
         delegate.rollback(savepoint);
         long t1 = System.nanoTime();
-        ctx.emit(ROLLBACK, -1, t0, t1 - t0, -1, 0);
+        ctx.emit(ROLLBACK, -1, t0, t1 - t0, -1, 0, 0L);
     }
 
     @Override
@@ -182,7 +182,7 @@ final class CapturingConnection implements Connection {
         long t0 = System.nanoTime();
         delegate.close();
         long t1 = System.nanoTime();
-        ctx.emit(CLOSE, -1, t0, t1 - t0, -1, 0);
+        ctx.emit(CLOSE, -1, t0, t1 - t0, -1, 0, 0L);
     }
 
     // --- everything below is straight delegation ---

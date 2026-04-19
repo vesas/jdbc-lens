@@ -21,7 +21,7 @@ public final class LogFormat {
     public static final int MAGIC = 0x4A44424C;
 
     /** Current on-disk format version. Bumps invalidate older readers. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     /** Delta flush of {@link io.github.vesas.jdbcprof.capture.SqlInternTable} entries. */
     public static final byte REC_SQL_DELTA = 1;
@@ -39,5 +39,5 @@ public final class LogFormat {
     public static final byte REC_OP_DELTA = 5;
 
     /** Fixed wire size of one event record, including trailing padding. */
-    public static final int EVENT_BYTES = 48;
+    public static final int EVENT_BYTES = 56;
 }

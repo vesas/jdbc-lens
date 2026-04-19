@@ -107,7 +107,8 @@ public final class CaptureContext {
      */
     public void emit(byte eventType, int sqlId,
                      long startNanos, long durationNanos,
-                     int rowsAffected, int batchSize) {
+                     int rowsAffected, int batchSize,
+                     long parameterFingerprint) {
         SpscRingBuffer ring = threadRing.get();
         Event e = ring.claim();
         if (e == null) {
@@ -123,6 +124,7 @@ public final class CaptureContext {
         e.durationNanos = durationNanos;
         e.rowsAffected = rowsAffected;
         e.batchSize = batchSize;
+        e.parameterFingerprint = parameterFingerprint;
         ring.publish();
     }
 }

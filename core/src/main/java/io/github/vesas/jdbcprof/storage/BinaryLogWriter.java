@@ -171,7 +171,8 @@ public final class BinaryLogWriter implements Closeable {
         put8(e.durationNanos);
         put4(e.rowsAffected);
         put4(e.batchSize);
-        // 3 bytes of padding to land on a 48-byte boundary (spec §5.2).
+        put8(e.parameterFingerprint);
+        // 3 bytes of padding to land on a 56-byte boundary.
         put1((byte) 0);
         put1((byte) 0);
         put1((byte) 0);

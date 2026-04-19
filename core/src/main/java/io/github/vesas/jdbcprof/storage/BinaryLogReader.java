@@ -159,6 +159,7 @@ public final class BinaryLogReader {
             e.durationNanos = bb.getLong();
             e.rowsAffected = bb.getInt();
             e.batchSize = bb.getInt();
+            e.parameterFingerprint = bb.getLong();
             bb.position(bb.position() + 3); // skip padding
             events.add(e);
         }

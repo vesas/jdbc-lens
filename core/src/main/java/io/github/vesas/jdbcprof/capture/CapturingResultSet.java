@@ -53,7 +53,7 @@ final class CapturingResultSet implements ResultSet {
         long t0 = System.nanoTime();
         boolean hasRow = delegate.next();
         long t1 = System.nanoTime();
-        ctx.emit(NEXT, sqlId, t0, t1 - t0, -1, 0);
+        ctx.emit(NEXT, sqlId, t0, t1 - t0, -1, 0, 0L);
         return hasRow;
     }
 
@@ -62,7 +62,7 @@ final class CapturingResultSet implements ResultSet {
         long t0 = System.nanoTime();
         delegate.close();
         long t1 = System.nanoTime();
-        ctx.emit(CLOSE, sqlId, t0, t1 - t0, -1, 0);
+        ctx.emit(CLOSE, sqlId, t0, t1 - t0, -1, 0, 0L);
     }
 
     // --- everything below is straight delegation ---

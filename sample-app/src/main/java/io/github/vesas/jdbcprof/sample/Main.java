@@ -44,6 +44,8 @@ public final class Main {
             batchedInserts(c);
             Profiler.currentOperation("heartbeat");
             updateSessions(c);
+            Profiler.currentOperation("hot-item-cache-miss");
+            cacheableLookup(c);
             Profiler.currentOperation(null);
         }
 
@@ -111,6 +113,26 @@ public final class Main {
         }
         c.commit();
         c.setAutoCommit(true);
+    }
+
+    /**
+     * Redundant-query shape: same SELECT, same bound id, ten times in
+     * a row. The profiler should flag this as a caching candidate
+     * distinct from the N+1 in {@link #classicN1Loop} which varies the
+     * id on each iteration.
+     */
+    private static void cacheableLookup(Connection c) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT name FROM customers WHERE id = ?")) {
+            for (int i = 0; i < 10; i++) {
+                ps.setInt(1, 1);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        rs.getString(1);
+                    }
+                }
+            }
+        }
     }
 
     private static void updateSessions(Connection c) throws Exception {

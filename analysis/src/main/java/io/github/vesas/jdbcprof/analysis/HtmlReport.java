@@ -41,16 +41,50 @@ public final class HtmlReport {
     public static void write(Path input, PrintStream out) throws IOException {
         Model m = Model.load(input);
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
+        List<RedundantFinding> redundant = new RedundantQueryDetector()
+                .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
+        renderRedundant(out, redundant);
         renderOperations(out, m);
         renderFlameGraph(out, flame);
         renderPairsTable(out, m);
         renderCallSitesTable(out, m);
         renderTemplatesTable(out, m);
         renderFooter(out);
+    }
+
+    private static void renderRedundant(PrintStream out, List<RedundantFinding> findings) {
+        out.println("<h2>Redundant queries</h2>");
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No repeated (template, parameters) pairs "
+                    + "within a single operation. The detector needs op-ids — call "
+                    + "<code>Profiler.currentOperation(\"name\")</code> to scope detection.</p>");
+            return;
+        }
+        out.println("<div class=\"findings\">");
+        for (RedundantFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">" + f.count() + "\u00D7</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(f.totalDurationNanos()))
+                    + " total DB time</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>template</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.sql() == null ? "sql[" + f.sqlId() + "]" : f.sql())
+                    + "</code></dd>");
+            out.println("      <dt>operation</dt><dd>"
+                    + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                    + "</dd>");
+            out.println("      <dt>call-site</dt><dd>"
+                    + htmlEscape(formatFrame(f.callSite())) + "</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
     }
 
     private static void renderOperations(PrintStream out, Model m) {
@@ -132,6 +166,9 @@ public final class HtmlReport {
         // "originating call-site count" columns.
         Map<Integer, Set<Integer>> templatesPerStack = new HashMap<>();
         Map<Integer, Set<Integer>> stacksPerTemplate = new HashMap<>();
+        // Count + duration per (op-id, sql-id, fingerprint, stack-id)
+        // so the redundant-query detector has what it needs.
+        Map<RedundantQueryDetector.Key, RedundantQueryDetector.Stats> redundant = new HashMap<>();
 
         static Model load(Path input) throws IOException {
             Model m = new Model();
@@ -187,6 +224,14 @@ public final class HtmlReport {
                         os.totalDurationNanos += dur;
                         if (e.sqlId >= 0) {
                             os.distinctSqls.add(e.sqlId);
+                        }
+                        if (isExecute(e.eventType) && e.parameterFingerprint != 0L) {
+                            RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
+                                    e.operationId, e.sqlId, e.parameterFingerprint, e.stackTraceId);
+                            RedundantQueryDetector.Stats rs = m.redundant.computeIfAbsent(
+                                    key, k -> new RedundantQueryDetector.Stats());
+                            rs.count++;
+                            rs.totalDurationNanos += dur;
                         }
                     }
                 }

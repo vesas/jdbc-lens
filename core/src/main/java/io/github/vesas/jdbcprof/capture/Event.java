@@ -25,6 +25,13 @@ public final class Event {
     public long durationNanos;
     public int rowsAffected;
     public int batchSize;
+    /**
+     * 64-bit hash of the parameter binding in effect at execute time
+     * (spec §5.5 extension). Zero for events that have no bound
+     * parameters (PREPARE, NEXT, COMMIT, ROLLBACK, CLOSE, or ad-hoc
+     * {@link java.sql.Statement} executes).
+     */
+    public long parameterFingerprint;
 
     public Event() {
         // Fields default to zero; rowsAffected stays 0 until set by the producer.
@@ -40,6 +47,7 @@ public final class Event {
         durationNanos = 0L;
         rowsAffected = 0;
         batchSize = 0;
+        parameterFingerprint = 0L;
     }
 
     public void copyFrom(Event other) {
@@ -52,5 +60,6 @@ public final class Event {
         this.durationNanos = other.durationNanos;
         this.rowsAffected = other.rowsAffected;
         this.batchSize = other.batchSize;
+        this.parameterFingerprint = other.parameterFingerprint;
     }
 }
