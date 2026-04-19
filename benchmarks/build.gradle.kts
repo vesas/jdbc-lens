@@ -7,10 +7,9 @@ dependencies {
 }
 
 jmh {
-    // Defaults; override from the command line with -Pjmh.* properties.
-    warmupIterations.set(3)
-    iterations.set(5)
-    fork.set(1)
-    timeOnIteration.set("2s")
-    warmup.set("1s")
+    // Warmup, measurement, and fork counts live on @Warmup, @Measurement,
+    // and @Fork annotations on each benchmark class so settings travel
+    // with the code. Overriding them here would silently clobber the
+    // per-benchmark discipline. Leave this block empty unless you need a
+    // project-wide override that every benchmark shares.
 }
