@@ -2,6 +2,8 @@ package io.github.vesas.jdbcprof.sample;
 
 import io.github.vesas.jdbcprof.Profiler;
 import io.github.vesas.jdbcprof.ProfilerConfig;
+import io.github.vesas.jdbcprof.sample.batch.DailyReportJob;
+import io.github.vesas.jdbcprof.sample.batch.StatementBuilder;
 import io.github.vesas.jdbcprof.sample.dao.AuditDao;
 import io.github.vesas.jdbcprof.sample.dao.CustomerDao;
 import io.github.vesas.jdbcprof.sample.dao.OrderDao;
@@ -48,6 +50,8 @@ public final class Main {
         SessionService sessionService = new SessionService(sessionDao);
         RefundService refundService = new RefundService(orders, audit);
         ProfileService profileService = new ProfileService(customers);
+        DailyReportJob reportJob = new DailyReportJob(
+                new StatementBuilder(customers, orders, audit));
 
         try (Connection c = ds.getConnection()) {
             Profiler.currentOperation("schema");
@@ -87,6 +91,9 @@ public final class Main {
             profileService.updatePhone(c, 7, "+1-555-1001");
             profileService.updatePhone(c, 12, "+1-555-1002");
             profileService.updatePhone(c, 23, "+1-555-1003");
+
+            Profiler.currentOperation("daily-report");
+            reportJob.run(c, new int[] {1, 7, 12, 23, 42});
 
             Profiler.currentOperation(null);
         }
