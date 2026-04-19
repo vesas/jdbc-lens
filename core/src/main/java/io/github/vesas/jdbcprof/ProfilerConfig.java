@@ -46,4 +46,12 @@ public record ProfilerConfig(
                 10,
                 0.9);
     }
+
+    /**
+     * The default frame-exclusion list shared between the capture
+     * configuration and the offline analysis layer (spec §8.1).
+     */
+    public static List<String> defaultFrameExclusions() {
+        return DEFAULT_EXCLUSIONS;
+    }
 }

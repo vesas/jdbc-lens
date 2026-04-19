@@ -36,7 +36,7 @@ class TextDumperTest {
                     .contains("[0] SELECT * FROM orders WHERE id = ?")
                     .contains("[1] INSERT INTO audit VALUES (?, ?)")
                     .contains("Stack traces: 1")
-                    .contains("com.example.OrderDao.findById:47")
+                    .contains("call-site=com.example.OrderDao.findById:47")
                     .contains("com.example.OrderService.load:12")
                     .contains("Events: 2")
                     .contains("PREPARE")

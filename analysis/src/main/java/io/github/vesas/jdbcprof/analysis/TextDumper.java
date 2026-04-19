@@ -74,7 +74,10 @@ public final class TextDumper {
         }
         out.println("# Stack traces: " + stacks.size());
         for (int id = 0; id < stacks.size(); id++) {
-            out.println("  [" + id + "] " + formatStack(stacks.get(id)));
+            StackFrameSnapshot[] frames = stacks.get(id);
+            StackFrameSnapshot site = Attribution.callSite(frames);
+            out.println("  [" + id + "] call-site=" + formatFrame(site));
+            out.println("      " + formatStack(frames));
         }
         out.println("# Events: " + eventCount[0]);
 
@@ -106,10 +109,15 @@ public final class TextDumper {
             if (i > 0) {
                 sb.append(" | ");
             }
-            StackFrameSnapshot f = frames[i];
-            sb.append(f.className()).append('.').append(f.methodName())
-                    .append(':').append(f.lineNumber());
+            sb.append(formatFrame(frames[i]));
         }
         return sb.toString();
+    }
+
+    private static String formatFrame(StackFrameSnapshot f) {
+        if (f == null) {
+            return "(none)";
+        }
+        return f.className() + '.' + f.methodName() + ':' + f.lineNumber();
     }
 }
