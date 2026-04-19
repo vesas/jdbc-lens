@@ -27,6 +27,27 @@ public final class OrderDao {
         }
     }
 
+    public record LatestOrder(int id, BigDecimal amount) {
+    }
+
+    public LatestOrder findLatestByCustomer(Connection c, int customerId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1")) {
+            ps.setInt(1, customerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? new LatestOrder(rs.getInt(1), rs.getBigDecimal(2)) : null;
+            }
+        }
+    }
+
+    public void markRefunded(Connection c, int orderId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE orders SET refunded = TRUE WHERE id = ?")) {
+            ps.setInt(1, orderId);
+            ps.executeUpdate();
+        }
+    }
+
     public int countByCustomer(Connection c, int customerId) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
                 "SELECT COUNT(*) FROM orders WHERE customer_id = ?")) {

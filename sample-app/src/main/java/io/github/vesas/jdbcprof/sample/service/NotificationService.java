@@ -1,13 +1,14 @@
 package io.github.vesas.jdbcprof.sample.service;
 
 import io.github.vesas.jdbcprof.sample.dao.AuditDao;
+import io.github.vesas.jdbcprof.sample.dao.CustomerDao;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Thin layer on top of {@link AuditDao} — exists to show the profiler
+ * Thin layer on top of {@link AuditDao}. Exists to show the profiler
  * how a real call chain looks in the report. When
  * {@link #recordCheckout} fires, the stack captured with each audit
  * INSERT reads:
@@ -19,19 +20,24 @@ import java.sql.SQLException;
  * Main.main
  * </pre>
  *
- * which is exactly the kind of attribution the report is meant to
- * surface on real applications.
+ * <p>Also fetches the customer's email before logging — a deliberate
+ * "second access" of the same customer row via a different template,
+ * so the entity-access audit has something to flag in the demo.
  */
 public final class NotificationService {
 
     private final AuditDao audit;
+    private final CustomerDao customers;
 
-    public NotificationService(AuditDao audit) {
+    public NotificationService(AuditDao audit, CustomerDao customers) {
         this.audit = audit;
+        this.customers = customers;
     }
 
     public void recordCheckout(Connection c, int customerId, BigDecimal amount) throws SQLException {
-        audit.log(c, "checkout-started", "customer=" + customerId);
-        audit.log(c, "checkout-completed", "customer=" + customerId + " amount=" + amount);
+        String email = customers.findEmailById(c, customerId);
+        audit.log(c, "checkout-started", "customer=" + customerId + " email=" + email);
+        audit.log(c, "checkout-completed",
+                "customer=" + customerId + " email=" + email + " amount=" + amount);
     }
 }

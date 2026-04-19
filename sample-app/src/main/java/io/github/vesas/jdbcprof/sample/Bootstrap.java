@@ -16,10 +16,15 @@ final class Bootstrap {
 
     static void createSchema(Connection c) throws SQLException {
         try (Statement s = c.createStatement()) {
-            s.execute("CREATE TABLE customers (id INT PRIMARY KEY, name VARCHAR(100))");
+            s.execute("CREATE TABLE customers ("
+                    + "id INT PRIMARY KEY, "
+                    + "name VARCHAR(100), "
+                    + "email VARCHAR(150))");
             s.execute("CREATE TABLE orders ("
                     + "id INT AUTO_INCREMENT PRIMARY KEY, "
-                    + "customer_id INT, amount DECIMAL(10,2))");
+                    + "customer_id INT, "
+                    + "amount DECIMAL(10,2), "
+                    + "refunded BOOLEAN DEFAULT FALSE)");
             s.execute("CREATE TABLE sessions ("
                     + "id INT PRIMARY KEY, last_seen TIMESTAMP)");
             s.execute("CREATE TABLE settings (k VARCHAR(100) PRIMARY KEY, v VARCHAR(100))");

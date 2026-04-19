@@ -10,6 +10,7 @@ import io.github.vesas.jdbcprof.sample.dao.SettingsDao;
 import io.github.vesas.jdbcprof.sample.service.CatalogService;
 import io.github.vesas.jdbcprof.sample.service.NotificationService;
 import io.github.vesas.jdbcprof.sample.service.OrderService;
+import io.github.vesas.jdbcprof.sample.service.RefundService;
 import io.github.vesas.jdbcprof.sample.service.SessionService;
 
 import javax.sql.DataSource;
@@ -40,10 +41,11 @@ public final class Main {
         SessionDao sessionDao = new SessionDao();
         SettingsDao settings = new SettingsDao();
         AuditDao audit = new AuditDao();
-        NotificationService notifications = new NotificationService(audit);
+        NotificationService notifications = new NotificationService(audit, customers);
         OrderService orderService = new OrderService(orders, customers, settings, notifications);
         CatalogService catalogService = new CatalogService(orders);
         SessionService sessionService = new SessionService(sessionDao);
+        RefundService refundService = new RefundService(orders, audit);
 
         try (Connection c = ds.getConnection()) {
             Profiler.currentOperation("schema");
@@ -73,6 +75,11 @@ public final class Main {
             orderService.completeCheckout(c, 7, new java.math.BigDecimal("59.90"));
             orderService.completeCheckout(c, 12, new java.math.BigDecimal("149.00"));
             orderService.completeCheckout(c, 23, new java.math.BigDecimal("39.95"));
+
+            Profiler.currentOperation("refund-latest");
+            refundService.refundLatest(c, 7);
+            refundService.refundLatest(c, 12);
+            refundService.refundLatest(c, 23);
 
             Profiler.currentOperation(null);
         }
