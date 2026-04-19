@@ -12,6 +12,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,14 +34,20 @@ public final class HtmlReport {
     }
 
     public static void write(Path input, Path output) throws IOException {
+        Model m = Model.load(input);
         try (OutputStream os = Files.newOutputStream(output);
              PrintStream out = new PrintStream(os, false, StandardCharsets.UTF_8)) {
-            write(input, out);
+            renderAll(out, input, m);
         }
+        writeDrillDownPages(output, m);
     }
 
     public static void write(Path input, PrintStream out) throws IOException {
         Model m = Model.load(input);
+        renderAll(out, input, m);
+    }
+
+    private static void renderAll(PrintStream out, Path input, Model m) {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
                 .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
@@ -55,6 +62,30 @@ public final class HtmlReport {
         renderCallSitesTable(out, m);
         renderTemplatesTable(out, m);
         renderFooter(out);
+    }
+
+    private static void writeDrillDownPages(Path mainReportFile, Model m) throws IOException {
+        Path parent = mainReportFile.toAbsolutePath().getParent();
+        if (parent == null) {
+            return;
+        }
+        Path opsDir = parent.resolve("ops");
+        String backLink = "../" + mainReportFile.getFileName().toString();
+        for (Map.Entry<Long, OpStats> entry : m.opStats.entrySet()) {
+            long opId = entry.getKey();
+            if (opId == NO_OPERATION) {
+                continue;
+            }
+            String opName = m.ops.get(opId);
+            if (opName == null) {
+                opName = "op-" + opId;
+            }
+            List<Event> events = m.eventsByOp.getOrDefault(opId, List.of());
+            DrillDown.write(DrillDown.fileFor(opsDir, opName),
+                    new DrillDown.Inputs(
+                            opId, opName, events, m.sqls, m.stacks,
+                            m.paramValuesById, backLink));
+        }
     }
 
     private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, Model m) {
@@ -149,9 +180,14 @@ public final class HtmlReport {
                     String label = noOp
                             ? "(no operation)"
                             : m.ops.getOrDefault(opId, "op[" + opId + "]");
-                    String labelCell = noOp
-                            ? "<td class=\"muted\">" + htmlEscape(label) + "</td>"
-                            : "<td><code class=\"site\">" + htmlEscape(label) + "</code></td>";
+                    String labelCell;
+                    if (noOp) {
+                        labelCell = "<td class=\"muted\">" + htmlEscape(label) + "</td>";
+                    } else {
+                        String href = "ops/" + DrillDown.slug(label) + ".html";
+                        labelCell = "<td><a href=\"" + htmlEscape(href) + "\">"
+                                + "<code class=\"site\">" + htmlEscape(label) + "</code></a></td>";
+                    }
                     out.println("    <tr>"
                             + labelCell
                             + tdDuration(s.totalDurationNanos)
@@ -210,6 +246,11 @@ public final class HtmlReport {
         // Used by the report to pair a redundant-queries card with the
         // actual bound values.
         Map<RedundantQueryDetector.Key, Integer> valuesIdForKey = new HashMap<>();
+        // Every event, bucketed by op-id. Memory cost is linear in
+        // total events — fine for the recording sizes the Phase-2
+        // report is meant for (test-suite scale, not all-day prod).
+        // Streaming drill-down is left for later.
+        Map<Long, List<Event>> eventsByOp = new HashMap<>();
 
         static Model load(Path input) throws IOException {
             Model m = new Model();
@@ -273,6 +314,7 @@ public final class HtmlReport {
                         if (e.sqlId >= 0) {
                             os.distinctSqls.add(e.sqlId);
                         }
+                        m.eventsByOp.computeIfAbsent(e.operationId, k -> new ArrayList<>()).add(e);
                         if (isExecute(e.eventType) && e.parameterFingerprint != 0L) {
                             RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
                                     e.operationId, e.sqlId, e.parameterFingerprint, e.stackTraceId);
