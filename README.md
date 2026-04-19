@@ -5,21 +5,29 @@ in your code, and produces an HTML report.
 
 ## Use it in another project
 
-### 1. Reference this repo as a Gradle composite build
+### 1. Publish the library to your Maven Local (one-off)
 
-In your project's `settings.gradle.kts`:
+From the `jdbc-prof` repo:
 
-```kotlin
-includeBuild("../path/to/jdbc-prof")
+```
+./gradlew :core:publishToMavenLocal
 ```
 
-### 2. Depend on the core module
+This installs `io.github.vesas:jdbc-prof-core:0.1.0-SNAPSHOT` into
+`~/.m2/repository/`.
+
+### 2. Depend on it from your project
 
 In your project's `build.gradle.kts`:
 
 ```kotlin
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
 dependencies {
-    testImplementation("io.github.vesas:core")
+    testImplementation("io.github.vesas:jdbc-prof-core:0.1.0-SNAPSHOT")
 }
 ```
 
