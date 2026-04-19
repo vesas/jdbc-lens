@@ -10,6 +10,7 @@ import io.github.vesas.jdbcprof.sample.dao.SettingsDao;
 import io.github.vesas.jdbcprof.sample.service.CatalogService;
 import io.github.vesas.jdbcprof.sample.service.NotificationService;
 import io.github.vesas.jdbcprof.sample.service.OrderService;
+import io.github.vesas.jdbcprof.sample.service.ProfileService;
 import io.github.vesas.jdbcprof.sample.service.RefundService;
 import io.github.vesas.jdbcprof.sample.service.SessionService;
 
@@ -46,6 +47,7 @@ public final class Main {
         CatalogService catalogService = new CatalogService(orders);
         SessionService sessionService = new SessionService(sessionDao);
         RefundService refundService = new RefundService(orders, audit);
+        ProfileService profileService = new ProfileService(customers);
 
         try (Connection c = ds.getConnection()) {
             Profiler.currentOperation("schema");
@@ -80,6 +82,11 @@ public final class Main {
             refundService.refundLatest(c, 7);
             refundService.refundLatest(c, 12);
             refundService.refundLatest(c, 23);
+
+            Profiler.currentOperation("update-profile");
+            profileService.updatePhone(c, 7, "+1-555-1001");
+            profileService.updatePhone(c, 12, "+1-555-1002");
+            profileService.updatePhone(c, 23, "+1-555-1003");
 
             Profiler.currentOperation(null);
         }

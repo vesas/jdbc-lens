@@ -19,7 +19,14 @@ final class Bootstrap {
             s.execute("CREATE TABLE customers ("
                     + "id INT PRIMARY KEY, "
                     + "name VARCHAR(100), "
-                    + "email VARCHAR(150))");
+                    + "email VARCHAR(150), "
+                    + "phone VARCHAR(30), "
+                    + "address_line VARCHAR(200), "
+                    + "city VARCHAR(80), "
+                    + "state VARCHAR(40), "
+                    + "postal_code VARCHAR(20), "
+                    + "country VARCHAR(40), "
+                    + "timezone VARCHAR(40))");
             s.execute("CREATE TABLE orders ("
                     + "id INT AUTO_INCREMENT PRIMARY KEY, "
                     + "customer_id INT, "
