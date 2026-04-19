@@ -41,11 +41,20 @@ public final class AnalyzeCli implements Callable<Integer> {
             TextDumper.dump(recording, System.out);
             return 0;
         }
+        if (isHtml(output)) {
+            HtmlReport.write(recording, output);
+            return 0;
+        }
         try (OutputStream os = Files.newOutputStream(output);
              PrintStream ps = new PrintStream(os, false, StandardCharsets.UTF_8)) {
             TextDumper.dump(recording, ps);
         }
         return 0;
+    }
+
+    private static boolean isHtml(Path p) {
+        String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".html") || name.endsWith(".htm");
     }
 
     public static void main(String[] args) {
