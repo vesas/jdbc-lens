@@ -28,6 +28,7 @@ public final class BinaryLogReader {
     public interface Handler {
         default void onSqlDelta(int firstId, List<String> sqls) {}
         default void onStackDelta(int firstId, List<StackFrameSnapshot[]> stacks) {}
+        default void onOpDelta(int firstId, List<String> names) {}
         default void onEvents(List<Event> events) {}
     }
 
@@ -62,6 +63,7 @@ public final class BinaryLogReader {
             switch (type) {
                 case LogFormat.REC_SQL_DELTA -> readSqlDelta(bb, handler);
                 case LogFormat.REC_STACK_DELTA -> readStackDelta(bb, handler);
+                case LogFormat.REC_OP_DELTA -> readOpDelta(bb, handler);
                 case LogFormat.REC_EVENTS -> readEvents(bb, handler);
                 case LogFormat.REC_END -> {
                     if (bb.position() != recordEnd || bb.hasRemaining()) {
@@ -103,6 +105,19 @@ public final class BinaryLogReader {
             sqls.add(new String(bytes, StandardCharsets.UTF_8));
         }
         handler.onSqlDelta(firstId, sqls);
+    }
+
+    private static void readOpDelta(ByteBuffer bb, Handler handler) {
+        int firstId = bb.getInt();
+        int count = bb.getInt();
+        List<String> names = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            int len = bb.getInt();
+            byte[] bytes = new byte[len];
+            bb.get(bytes);
+            names.add(new String(bytes, StandardCharsets.UTF_8));
+        }
+        handler.onOpDelta(firstId, names);
     }
 
     private static void readStackDelta(ByteBuffer bb, Handler handler) {

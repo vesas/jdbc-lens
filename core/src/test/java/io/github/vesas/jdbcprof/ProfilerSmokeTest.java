@@ -115,6 +115,47 @@ class ProfilerSmokeTest {
         return h2;
     }
 
+    @Test
+    void operationIdRoundTripsThroughBinaryLog(@TempDir Path tmp) throws Exception {
+        Path log = tmp.resolve("op.jdbclog");
+        Profiler.start(ProfilerConfig.defaults(log));
+        try {
+            DataSource ds = Profiler.wrap(newH2());
+            try (Connection conn = ds.getConnection();
+                 PreparedStatement ps = conn.prepareStatement("SELECT ? AS v")) {
+
+                Profiler.currentOperation("op-a");
+                ps.setInt(1, 1);
+                try (ResultSet rs = ps.executeQuery()) { while (rs.next()) rs.getInt(1); }
+
+                Profiler.currentOperation("op-b");
+                ps.setInt(1, 2);
+                try (ResultSet rs = ps.executeQuery()) { while (rs.next()) rs.getInt(1); }
+
+                Profiler.currentOperation(null);
+                ps.setInt(1, 3);
+                try (ResultSet rs = ps.executeQuery()) { while (rs.next()) rs.getInt(1); }
+            }
+        } finally {
+            Profiler.stop();
+        }
+
+        Collected c = readAll(log);
+        assertThat(c.ops).containsExactly("op-a", "op-b");
+
+        // Every EXECUTE_QUERY event carries the operation id that was
+        // active on its thread at the time of capture. Event order in
+        // the log is producer order per thread.
+        long[] execOps = c.events.stream()
+                .filter(e -> EventType.fromCode(e.eventType) == EventType.EXECUTE_QUERY)
+                .mapToLong(e -> e.operationId)
+                .toArray();
+        assertThat(execOps).hasSize(3);
+        assertThat(execOps[0]).isEqualTo(0L);   // first interned → id 0
+        assertThat(execOps[1]).isEqualTo(1L);   // second interned
+        assertThat(execOps[2]).isEqualTo(-1L);  // cleared with null
+    }
+
     private static Collected readAll(Path log) throws IOException {
         Collected c = new Collected();
         new BinaryLogReader(log).read(new BinaryLogReader.Handler() {
@@ -123,6 +164,9 @@ class ProfilerSmokeTest {
             }
             @Override public void onStackDelta(int firstId, List<StackFrameSnapshot[]> stacks) {
                 c.stacks.addAll(stacks);
+            }
+            @Override public void onOpDelta(int firstId, List<String> names) {
+                c.ops.addAll(names);
             }
             @Override public void onEvents(List<Event> batch) {
                 c.events.addAll(batch);
@@ -134,6 +178,7 @@ class ProfilerSmokeTest {
     private static final class Collected {
         final List<String> sqls = new ArrayList<>();
         final List<StackFrameSnapshot[]> stacks = new ArrayList<>();
+        final List<String> ops = new ArrayList<>();
         final List<Event> events = new ArrayList<>();
     }
 }

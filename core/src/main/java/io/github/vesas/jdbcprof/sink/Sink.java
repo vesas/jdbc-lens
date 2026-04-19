@@ -2,6 +2,7 @@ package io.github.vesas.jdbcprof.sink;
 
 import io.github.vesas.jdbcprof.capture.CaptureContext;
 import io.github.vesas.jdbcprof.capture.Event;
+import io.github.vesas.jdbcprof.capture.OperationInternTable;
 import io.github.vesas.jdbcprof.capture.SpscRingBuffer;
 import io.github.vesas.jdbcprof.capture.SqlInternTable;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
@@ -36,6 +37,7 @@ public final class Sink {
 
     private int lastSqlId;
     private int lastStackId;
+    private int lastOpId;
 
     private volatile Thread worker;
     private volatile boolean stopping;
@@ -89,6 +91,7 @@ public final class Sink {
     public synchronized void flushOnce() throws IOException {
         flushSqlDelta();
         flushStackDelta();
+        flushOpDelta();
         flushEvents();
     }
 
@@ -107,6 +110,15 @@ public final class Sink {
         if (!delta.isEmpty()) {
             writer.writeStackDelta(lastStackId, delta);
             lastStackId += delta.size();
+        }
+    }
+
+    private void flushOpDelta() throws IOException {
+        OperationInternTable opIntern = ctx.opIntern();
+        List<String> delta = opIntern.entriesSince(lastOpId);
+        if (!delta.isEmpty()) {
+            writer.writeOpDelta(lastOpId, delta);
+            lastOpId += delta.size();
         }
     }
 

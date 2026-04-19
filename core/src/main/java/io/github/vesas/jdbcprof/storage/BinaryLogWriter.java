@@ -80,6 +80,30 @@ public final class BinaryLogWriter implements Closeable {
     }
 
     /**
+     * Emit an operation intern-table delta. Same wire shape as
+     * {@link #writeSqlDelta} — readers can share the same parser.
+     */
+    public void writeOpDelta(int firstId, List<String> names) throws IOException {
+        if (names.isEmpty()) {
+            return;
+        }
+        byte[][] encoded = new byte[names.size()][];
+        int payloadLen = 4 + 4; // firstId + count
+        for (int i = 0; i < names.size(); i++) {
+            encoded[i] = names.get(i).getBytes(StandardCharsets.UTF_8);
+            payloadLen += 4 + encoded[i].length;
+        }
+        put1(LogFormat.REC_OP_DELTA);
+        put4(payloadLen);
+        put4(firstId);
+        put4(names.size());
+        for (byte[] bytes : encoded) {
+            put4(bytes.length);
+            putBytes(bytes);
+        }
+    }
+
+    /**
      * Emit a stack-trace intern-table delta. Analogous to
      * {@link #writeSqlDelta}.
      */

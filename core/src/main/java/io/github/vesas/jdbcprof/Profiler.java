@@ -102,11 +102,18 @@ public final class Profiler {
     }
 
     /**
-     * Sets a thread-local operation id used to scope N+1 detection
-     * (spec §3, §8.3). Phase 3.
+     * Sets a thread-local operation id that subsequent events on this
+     * thread are attributed to (spec §3, §10). Pass {@code null} to
+     * clear the id. Silent no-op when no profiler session is active —
+     * production code that wires the id via a servlet filter or test
+     * extension does not have to special-case "profiler disabled."
      */
     public static void currentOperation(String operationId) {
-        throw new UnsupportedOperationException("phase 3 not implemented");
+        Session s = session;
+        if (s == null) {
+            return;
+        }
+        s.ctx.setCurrentOperation(operationId);
     }
 
     private static void stopQuietly() {

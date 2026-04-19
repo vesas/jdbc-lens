@@ -35,6 +35,9 @@ public final class LogFormat {
     /** Closing marker. Written exactly once, immediately before the CRC. */
     public static final byte REC_END = 4;
 
+    /** Delta flush of {@link io.github.vesas.jdbcprof.capture.OperationInternTable} entries. */
+    public static final byte REC_OP_DELTA = 5;
+
     /** Fixed wire size of one event record, including trailing padding. */
     public static final int EVENT_BYTES = 48;
 }

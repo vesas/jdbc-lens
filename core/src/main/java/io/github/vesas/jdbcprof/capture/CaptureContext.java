@@ -21,12 +21,21 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class CaptureContext {
 
+    /** Sentinel value stored in {@link Event#operationId} when no op-id is set. */
+    public static final long NO_OPERATION = -1L;
+
     private final SqlInternTable sqlIntern = new SqlInternTable();
     private final StackTraceInternTable stackIntern;
+    private final OperationInternTable opIntern = new OperationInternTable();
 
     private final int ringCapacity;
     private final CopyOnWriteArrayList<SpscRingBuffer> allRings = new CopyOnWriteArrayList<>();
     private final ThreadLocal<SpscRingBuffer> threadRing;
+    // Long boxing here is fine — set rarely (once per operation
+    // boundary, not per query) so the per-emit read below only pays a
+    // Long.longValue call that the JIT strips. Initial value -1 mirrors
+    // NO_OPERATION.
+    private final ThreadLocal<Long> currentOperation = ThreadLocal.withInitial(() -> NO_OPERATION);
 
     public CaptureContext(int ringCapacity, int stackDepthLimit) {
         this.ringCapacity = ringCapacity;
@@ -53,6 +62,28 @@ public final class CaptureContext {
 
     public StackTraceInternTable stackIntern() {
         return stackIntern;
+    }
+
+    public OperationInternTable opIntern() {
+        return opIntern;
+    }
+
+    /**
+     * Set the current thread's operation id. {@code null} clears it
+     * (future events will carry {@link #NO_OPERATION}).
+     */
+    public void setCurrentOperation(String name) {
+        if (name == null) {
+            currentOperation.set(NO_OPERATION);
+            return;
+        }
+        int id = opIntern.intern(name);
+        currentOperation.set((long) id);
+    }
+
+    /** The current thread's operation id, or {@link #NO_OPERATION} if none. */
+    public long currentOperationId() {
+        return currentOperation.get();
     }
 
     /**
@@ -85,7 +116,7 @@ public final class CaptureContext {
         }
         e.timestampNanos = startNanos;
         e.threadId = (int) Thread.currentThread().getId();
-        e.operationId = 0L;
+        e.operationId = currentOperation.get();
         e.eventType = eventType;
         e.sqlId = sqlId;
         e.stackTraceId = stackIntern.internCurrent();
