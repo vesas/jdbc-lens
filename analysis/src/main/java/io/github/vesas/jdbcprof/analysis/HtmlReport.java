@@ -51,11 +51,16 @@ public final class HtmlReport {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
                 .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
+        List<EntityFinding> entities = EntityAccessAudit.detect(
+                new EntityAccessAudit.Inputs(
+                        m.eventsByOp, m.sqls, m.stacks,
+                        m.paramValuesById, m.ops, NO_OPERATION));
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
         renderFindings(out, findings);
         renderRedundant(out, redundant, m);
+        renderEntityAccess(out, entities, m);
         renderOperations(out, m);
         renderFlameGraph(out, flame);
         renderPairsTable(out, m);
@@ -149,6 +154,53 @@ public final class HtmlReport {
         }
         sb.append("</code></dd>");
         return sb.toString();
+    }
+
+    private static void renderEntityAccess(PrintStream out, List<EntityFinding> findings, Model m) {
+        out.println("<h2>Entity access audit</h2>");
+        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
+            out.println("<p class=\"findings-empty\">Parameter values were not captured, "
+                    + "so the audit cannot tell which entity each query touched. "
+                    + "Enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
+            return;
+        }
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No entity was accessed by more than one "
+                    + "distinct template within the same operation.</p>");
+            return;
+        }
+        out.println("<div class=\"findings\">");
+        for (EntityFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            String entityLabel = f.table() + "." + f.column() + " = " + f.value();
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">" + f.templates().size() + " templates</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(f.totalDurationNanos()))
+                    + " total DB time \u00B7 " + f.totalEvents() + " events</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>entity</dt><dd><code class=\"site\">"
+                    + htmlEscape(entityLabel) + "</code></dd>");
+            out.println("      <dt>operation</dt><dd>"
+                    + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                    + "</dd>");
+            out.println("      <dt>touched by</dt><dd>");
+            for (EntityFinding.TemplateHit h : f.templates()) {
+                out.println("        <div><code class=\"sql\">"
+                        + htmlEscape(h.sql() == null ? "sql[" + h.sqlId() + "]" : h.sql())
+                        + "</code> <span class=\"muted\">\u2014 "
+                        + htmlEscape(formatFrame(h.callSite()))
+                        + " \u00B7 " + h.count() + "\u00D7 \u00B7 "
+                        + htmlEscape(formatDuration(h.totalDurationNanos()))
+                        + "</span></div>");
+            }
+            out.println("      </dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Fetch all columns once and pass the row through the call chain.</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
     }
 
     private static void renderOperations(PrintStream out, Model m) {
