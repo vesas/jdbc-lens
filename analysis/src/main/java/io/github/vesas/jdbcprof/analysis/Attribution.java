@@ -67,6 +67,38 @@ public final class Attribution {
         return frames[0];
     }
 
+    /**
+     * The frame immediately above {@code site} in {@code frames} that
+     * is neither JDK nor profiler/JDBC infrastructure. Spec §8.3 calls
+     * this the "common ancestor" and notes it is usually the actual
+     * bug — the outer loop that should have batched. Returns {@code
+     * null} if no such frame exists (e.g. the call-site is already
+     * {@code main}).
+     */
+    public static StackFrameSnapshot ancestorFrame(StackFrameSnapshot[] frames,
+                                                   StackFrameSnapshot site) {
+        if (frames == null || site == null) {
+            return null;
+        }
+        int siteIdx = -1;
+        for (int i = 0; i < frames.length; i++) {
+            if (frames[i].equals(site)) {
+                siteIdx = i;
+                break;
+            }
+        }
+        if (siteIdx < 0) {
+            return null;
+        }
+        for (int i = siteIdx + 1; i < frames.length; i++) {
+            StackFrameSnapshot f = frames[i];
+            if (!isJdk(f) && !isInfra(f)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
     private static boolean matchesAny(StackFrameSnapshot f, List<String> prefixes) {
         String cls = f.className();
         // Index-based loop: avoids the Iterator allocation the report

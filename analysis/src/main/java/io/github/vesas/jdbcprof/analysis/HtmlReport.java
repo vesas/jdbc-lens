@@ -1,6 +1,7 @@
 package io.github.vesas.jdbcprof.analysis;
 
 import io.github.vesas.jdbcprof.capture.Event;
+import io.github.vesas.jdbcprof.capture.EventType;
 import io.github.vesas.jdbcprof.capture.StackFrameSnapshot;
 import io.github.vesas.jdbcprof.storage.BinaryLogReader;
 
@@ -20,12 +21,10 @@ import java.util.Set;
 /**
  * Phase 2 HTML renderer (spec §9). Produces a single self-contained
  * HTML file — no external CSS, no external JS, no network calls —
- * with a summary card and three sortable tables: (call-site, template)
- * pairs, call-sites alone, templates alone.
+ * with a summary card, N+1 findings, and three sortable tables:
+ * (call-site, template) pairs, call-sites alone, templates alone.
  *
- * <p>Flamegraph, expandable rows, and N+1 findings are out of scope
- * for this slice; this is the "usable HTML report without N+1
- * detection" milestone from spec §11 Phase 2.
+ * <p>Flamegraph and expandable rows are still deferred.
  */
 public final class HtmlReport {
 
@@ -41,8 +40,10 @@ public final class HtmlReport {
 
     public static void write(Path input, PrintStream out) throws IOException {
         Model m = Model.load(input);
+        List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
+        renderFindings(out, findings);
         renderPairsTable(out, m);
         renderCallSitesTable(out, m);
         renderTemplatesTable(out, m);
@@ -54,6 +55,11 @@ public final class HtmlReport {
         Map<Integer, String> sqls = new HashMap<>();
         Map<Integer, StackFrameSnapshot[]> stacks = new HashMap<>();
         Aggregator agg = new Aggregator();
+        // Same shape as `agg` but restricted to actual query executions
+        // (PREPARE / NEXT / CLOSE / COMMIT / ROLLBACK dropped). Spec §8.3
+        // counts "executions" — PREPARE and NEXT would inflate the count
+        // and split each template across many stacks, masking real N+1s.
+        Aggregator executeAgg = new Aggregator();
         long firstTs = Long.MAX_VALUE;
         long lastTs = Long.MIN_VALUE;
         long totalDurationNanos;
@@ -88,6 +94,9 @@ public final class HtmlReport {
                 public void onEvents(List<Event> events) {
                     for (Event e : events) {
                         m.agg.add(e);
+                        if (isExecute(e.eventType)) {
+                            m.executeAgg.add(e);
+                        }
                         m.eventCount++;
                         long dur = Math.max(0L, e.durationNanos);
                         m.totalDurationNanos += dur;
@@ -115,6 +124,13 @@ public final class HtmlReport {
                 return 0L;
             }
             return Math.max(0L, lastTs - firstTs);
+        }
+
+        private static boolean isExecute(byte eventTypeCode) {
+            byte c = eventTypeCode;
+            return c == EventType.EXECUTE_QUERY.code()
+                    || c == EventType.EXECUTE_UPDATE.code()
+                    || c == EventType.EXECUTE_BATCH.code();
         }
     }
 
@@ -167,6 +183,27 @@ public final class HtmlReport {
                 ol.top { padding-left: 20px; margin: 8px 0 0 0; }
                 ol.top li { margin: 2px 0; }
                 ol.top code { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); }
+                .findings { display: grid; gap: 12px; margin: 8px 0 0 0; }
+                .finding {
+                  border: 1px solid #f0c36d;
+                  background: #fff8e1;
+                  border-left: 4px solid #e2a03f;
+                  border-radius: 6px;
+                  padding: 12px 14px;
+                }
+                .finding-head {
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 12px;
+                  align-items: baseline;
+                  margin-bottom: 6px;
+                }
+                .finding-count { font-weight: 600; font-family: var(--mono); }
+                .finding-time { color: var(--fg-muted); font-family: var(--mono); }
+                .finding-kv { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; font-size: 13px; }
+                .finding-kv dt { color: var(--fg-muted); }
+                .finding-kv dd { margin: 0; font-family: var(--mono); word-break: break-word; }
+                .findings-empty { color: var(--fg-muted); font-size: 13px; font-style: italic; }
                 table {
                   width: 100%;
                   border-collapse: collapse;
@@ -233,6 +270,42 @@ public final class HtmlReport {
         out.println("    <div class=\"stat-label\">" + htmlEscape(label) + "</div>");
         out.println("    <div class=\"stat-value\">" + htmlEscape(value) + "</div>");
         out.println("  </div>");
+    }
+
+    private static void renderFindings(PrintStream out, List<N1Finding> findings) {
+        out.println("<h2>N+1 findings</h2>");
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No N+1 patterns detected above the default "
+                    + "thresholds (count \u2265 10, share \u2265 0.9).</p>");
+            return;
+        }
+        out.println("<div class=\"findings\">");
+        for (N1Finding f : findings) {
+            out.println("  <div class=\"finding\">");
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">" + f.count() + "\u00D7</span> "
+                    + "<span class=\"finding-time\">" + htmlEscape(formatDuration(f.totalDurationNanos())) + " total DB time</span>"
+                    + "</div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>template</dt><dd>" + tdContent(sqlLabel(f.sql(), f.sqlId())) + "</dd>");
+            out.println("      <dt>call-site</dt><dd>" + htmlEscape(formatFrame(f.representativeSite())) + "</dd>");
+            if (f.ancestor() != null && !f.ancestor().equals(f.representativeSite())) {
+                out.println("      <dt>ancestor</dt><dd>" + htmlEscape(formatFrame(f.ancestor())) + "</dd>");
+            }
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static String tdContent(String s) {
+        return "<code class=\"sql\">" + htmlEscape(s) + "</code>";
+    }
+
+    private static String sqlLabel(String sql, int sqlId) {
+        if (sql != null) return sql;
+        if (sqlId < 0) return "(no SQL)";
+        return "sql[" + sqlId + "]";
     }
 
     private static void renderPairsTable(PrintStream out, Model m) {

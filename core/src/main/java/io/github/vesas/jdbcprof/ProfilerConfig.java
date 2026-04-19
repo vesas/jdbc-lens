@@ -56,4 +56,14 @@ public record ProfilerConfig(
     public static List<String> defaultFrameExclusions() {
         return DEFAULT_EXCLUSIONS;
     }
+
+    /** Default minimum repetitions before a template is an N+1 candidate (spec §8.3). */
+    public static int defaultN1MinCount() {
+        return 10;
+    }
+
+    /** Default share of repetitions that must originate from one ancestor (spec §8.3). */
+    public static double defaultN1AncestorFraction() {
+        return 0.9;
+    }
 }
