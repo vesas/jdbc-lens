@@ -8,5 +8,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("io.github.vesas.jdbcprof.analysis.AnalyzeCli")
+    mainClass.set("fi.vesas.jdbcprof.analysis.AnalyzeCli")
 }

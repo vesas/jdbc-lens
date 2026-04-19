@@ -28,7 +28,7 @@ From the `jdbc-prof` repo:
 ./gradlew :core:publishToMavenLocal
 ```
 
-This installs `io.github.vesas:jdbc-prof-core:0.1.0-SNAPSHOT` into
+This installs `fi.vesas:jdbc-prof-core:0.1.0-SNAPSHOT` into
 `~/.m2/repository/`.
 
 ### 2. Depend on it from your project
@@ -42,7 +42,7 @@ repositories {
 }
 
 dependencies {
-    testImplementation("io.github.vesas:jdbc-prof-core:0.1.0-SNAPSHOT")
+    testImplementation("fi.vesas:jdbc-prof-core:0.1.0-SNAPSHOT")
 }
 ```
 
@@ -53,8 +53,8 @@ Use `implementation` instead if you want the profiler outside tests.
 Before the workload you want to profile:
 
 ```java
-import io.github.vesas.jdbcprof.Profiler;
-import io.github.vesas.jdbcprof.ProfilerConfig;
+import fi.vesas.jdbcprof.Profiler;
+import fi.vesas.jdbcprof.ProfilerConfig;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 

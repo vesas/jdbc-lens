@@ -56,8 +56,8 @@ layer.
 
 ## Coordinates
 
-- Group: `io.github.vesas`
-- Namespace: `io.github.vesas.jdbcprof`
+- Group: `fi.vesas`
+- Namespace: `fi.vesas.jdbcprof`
 - Java toolchain: 17 (spec §2 targets JDBC 4.2+ and Java 17+).
   Gradle provisions it via toolchains — the JDK on `PATH` can be
   newer.
@@ -86,9 +86,9 @@ met.
 
 ## Conventions
 
-- Public API lives in `io.github.vesas.jdbcprof` (spec §10). Keep it
+- Public API lives in `fi.vesas.jdbcprof` (spec §10). Keep it
   minimal — four entry points today.
-- Internal packages: `io.github.vesas.jdbcprof.capture`,
+- Internal packages: `fi.vesas.jdbcprof.capture`,
   `.sink`, `.storage`, `.analysis`. Do not leak internal types
   through the public API.
 - Tests: JUnit 5 + AssertJ. Benchmarks: JMH.

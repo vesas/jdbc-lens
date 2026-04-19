@@ -12,5 +12,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("io.github.vesas.jdbcprof.sample.Main")
+    mainClass.set("fi.vesas.jdbcprof.sample.Main")
 }
