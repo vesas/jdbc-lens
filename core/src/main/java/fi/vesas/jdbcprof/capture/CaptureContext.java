@@ -2,6 +2,7 @@ package fi.vesas.jdbcprof.capture;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Shared state for one profiling session: the intern tables and the
@@ -24,6 +25,9 @@ public final class CaptureContext {
     /** Sentinel value stored in {@link Event#operationId} when no op-id is set. */
     public static final long NO_OPERATION = -1L;
 
+    /** Sentinel stored in {@link Event#operationInvocationId} when no op is active. */
+    public static final long NO_OPERATION_INVOCATION = -1L;
+
     private final SqlInternTable sqlIntern = new SqlInternTable();
     private final StackTraceInternTable stackIntern;
     private final OperationInternTable opIntern = new OperationInternTable();
@@ -38,6 +42,16 @@ public final class CaptureContext {
     // Long.longValue call that the JIT strips. Initial value -1 mirrors
     // NO_OPERATION.
     private final ThreadLocal<Long> currentOperation = ThreadLocal.withInitial(() -> NO_OPERATION);
+    // Per-thread current invocation id. Bumped off `invocationCounter`
+    // each time setCurrentOperation() is called with a non-null name,
+    // so repeated invocations of the same op name are distinguishable
+    // in the event stream.
+    private final ThreadLocal<Long> currentInvocation =
+            ThreadLocal.withInitial(() -> NO_OPERATION_INVOCATION);
+    // Session-global monotonic source for invocation ids. Single
+    // AtomicLong is adequate: contention only at op boundaries, not
+    // per-query, and the wrapping cost is paid once per operation.
+    private final AtomicLong invocationCounter = new AtomicLong(0L);
 
     public CaptureContext(int ringCapacity, int stackDepthLimit) {
         this(ringCapacity, stackDepthLimit, false);
@@ -90,10 +104,17 @@ public final class CaptureContext {
     public void setCurrentOperation(String name) {
         if (name == null) {
             currentOperation.set(NO_OPERATION);
+            currentInvocation.set(NO_OPERATION_INVOCATION);
             return;
         }
         int id = opIntern.intern(name);
         currentOperation.set((long) id);
+        currentInvocation.set(invocationCounter.incrementAndGet());
+    }
+
+    /** The current thread's invocation id, or {@link #NO_OPERATION_INVOCATION} if none. */
+    public long currentInvocationId() {
+        return currentInvocation.get();
     }
 
     /** The current thread's operation id, or {@link #NO_OPERATION} if none. */
@@ -142,6 +163,7 @@ public final class CaptureContext {
         e.timestampNanos = startNanos;
         e.threadId = (int) Thread.currentThread().getId();
         e.operationId = currentOperation.get();
+        e.operationInvocationId = currentInvocation.get();
         e.eventType = eventType;
         e.sqlId = sqlId;
         e.stackTraceId = stackIntern.internCurrent();

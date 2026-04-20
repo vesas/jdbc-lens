@@ -21,16 +21,22 @@ import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Objects;
+import java.util.Calendar;
+import java.util.function.Supplier;
 
 /**
- * Wraps a real {@link PreparedStatement}. The SQL is pre-interned at
- * prepare time and carried as {@code sqlId} on every execution so the
- * hot path does no string work (spec §5.5). Inherits
- * {@link CapturingStatement} so the ad-hoc {@code execute(String)}
- * overloads, {@code close}, warning/fetch settings, and the
- * {@link java.sql.Statement} contract all come through unchanged.
+ * Wraps a real {@link PreparedStatement}. When a session is active at
+ * prepare time the SQL is interned then and carried as {@code sqlId}
+ * on every execution so the hot path does no string work (spec §5.5).
+ * When no session is active at prepare time, the raw template is kept
+ * and interned lazily on the first execute that sees a live session —
+ * keeping the ids stable across the statement's lifetime.
+ *
+ * <p>Inherits {@link CapturingStatement} so the ad-hoc
+ * {@code execute(String)} overloads, {@code close}, warning/fetch
+ * settings, and the {@link java.sql.Statement} contract all come
+ * through unchanged.
  *
  * <p>Each {@code setXxx} update keeps a per-index 64-bit hash of the
  * current binding. On execute those slots are folded into a single
@@ -40,6 +46,7 @@ import java.util.Objects;
  */
 final class CapturingPreparedStatement extends CapturingStatement implements PreparedStatement {
 
+    private static final byte PREPARE = (byte) EventType.PREPARE.ordinal();
     private static final byte EXECUTE_QUERY = (byte) EventType.EXECUTE_QUERY.ordinal();
     private static final byte EXECUTE_UPDATE = (byte) EventType.EXECUTE_UPDATE.ordinal();
     private static final byte EXECUTE_BATCH = (byte) EventType.EXECUTE_BATCH.ordinal();
@@ -77,17 +84,41 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
     private static final long TAG_SQLXML = 0x1AL;
 
     private final PreparedStatement ps;
-    private final int sqlId;
+    private final String sql;
+    private int sqlId;
 
     private long[] paramHashes;
     private String[] paramValues;
     private int maxIndex;
 
-    CapturingPreparedStatement(PreparedStatement delegate, CaptureContext ctx, int sqlId) {
-        super(delegate, ctx);
+    CapturingPreparedStatement(PreparedStatement delegate, Supplier<CaptureContext> ctxSupplier,
+                               String sql, int sqlId) {
+        super(delegate, ctxSupplier);
         this.ps = delegate;
+        this.sql = sql;
         this.sqlId = sqlId;
         this.lastSqlId = sqlId;
+    }
+
+    /**
+     * Returns an interned id for {@link #sql}, interning on first call
+     * if it wasn't done at prepare time. The session seen here may be
+     * different from the one at prepare time (or may have just become
+     * active) — either way we intern against the current session so
+     * later events reference an id it knows about.
+     */
+    private int resolveSqlId(CaptureContext ctx) {
+        int id = sqlId;
+        if (id < 0) {
+            id = ctx.sqlIntern().intern(sql);
+            sqlId = id;
+            lastSqlId = id;
+            // The PREPARE event is best-effort: we missed the real
+            // prepare call, so emit a zero-duration marker so the
+            // analysis layer still sees this template's lifecycle.
+            ctx.emit(PREPARE, id, 0L, 0L, -1, 0, 0L);
+        }
+        return id;
     }
 
     private void setSlot(int parameterIndex, long tag, long valueHash) {
@@ -109,7 +140,10 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
 
     private void setSlot(int parameterIndex, long tag, long valueHash, String display) {
         setSlot(parameterIndex, tag, valueHash);
-        if (!ctx.captureParameterValues()) {
+        // Only keep the display string when some live session asks for it.
+        // With no session, or a session that didn't opt in, skip the store.
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null || !ctx.captureParameterValues()) {
             return;
         }
         if (paramValues == null || parameterIndex >= paramValues.length) {
@@ -123,7 +157,7 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
         paramValues[parameterIndex] = display;
     }
 
-    private int internCurrentValues() {
+    private int internCurrentValues(CaptureContext ctx) {
         if (!ctx.captureParameterValues() || paramValues == null || maxIndex == 0) {
             return -1;
         }
@@ -157,49 +191,69 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
 
     @Override
     public ResultSet executeQuery() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            return wrapResultSet(ps.executeQuery());
+        }
+        int id = resolveSqlId(ctx);
         long fp = fingerprint();
-        int valuesId = internCurrentValues();
+        int valuesId = internCurrentValues(ctx);
         long t0 = System.nanoTime();
         ResultSet rs = ps.executeQuery();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_QUERY, sqlId, t0, t1 - t0, -1, 0, fp, valuesId);
+        ctx.emit(EXECUTE_QUERY, id, t0, t1 - t0, -1, 0, fp, valuesId);
         return wrapResultSet(rs);
     }
 
     @Override
     public int executeUpdate() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            return ps.executeUpdate();
+        }
+        int id = resolveSqlId(ctx);
         long fp = fingerprint();
-        int valuesId = internCurrentValues();
+        int valuesId = internCurrentValues(ctx);
         long t0 = System.nanoTime();
         int rows = ps.executeUpdate();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, rows, 0, fp, valuesId);
+        ctx.emit(EXECUTE_UPDATE, id, t0, t1 - t0, rows, 0, fp, valuesId);
         return rows;
     }
 
     @Override
     public long executeLargeUpdate() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            return ps.executeLargeUpdate();
+        }
+        int id = resolveSqlId(ctx);
         long fp = fingerprint();
-        int valuesId = internCurrentValues();
+        int valuesId = internCurrentValues(ctx);
         long t0 = System.nanoTime();
         long rows = ps.executeLargeUpdate();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, clampRows(rows), 0, fp, valuesId);
+        ctx.emit(EXECUTE_UPDATE, id, t0, t1 - t0, clampRows(rows), 0, fp, valuesId);
         return rows;
     }
 
     @Override
     public boolean execute() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            return ps.execute();
+        }
+        int id = resolveSqlId(ctx);
         long fp = fingerprint();
-        int valuesId = internCurrentValues();
+        int valuesId = internCurrentValues(ctx);
         long t0 = System.nanoTime();
         boolean hasResultSet = ps.execute();
         long t1 = System.nanoTime();
         if (hasResultSet) {
-            ctx.emit(EXECUTE_QUERY, sqlId, t0, t1 - t0, -1, 0, fp, valuesId);
+            ctx.emit(EXECUTE_QUERY, id, t0, t1 - t0, -1, 0, fp, valuesId);
         } else {
             int rows = ps.getUpdateCount();
-            ctx.emit(EXECUTE_UPDATE, sqlId, t0, t1 - t0, rows, 0, fp, valuesId);
+            ctx.emit(EXECUTE_UPDATE, id, t0, t1 - t0, rows, 0, fp, valuesId);
         }
         return hasResultSet;
     }
@@ -212,26 +266,40 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
 
     @Override
     public int[] executeBatch() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            int[] counts = ps.executeBatch();
+            batchSize = 0;
+            return counts;
+        }
         // A batch's fingerprint is ill-defined — every bound row in the
         // batch has its own parameters and addBatch() doesn't surface
         // them to us. Pass 0L; the analysis layer ignores fingerprint
         // for EXECUTE_BATCH.
+        int id = resolveSqlId(ctx);
         int size = batchSize;
         long t0 = System.nanoTime();
         int[] counts = ps.executeBatch();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_BATCH, sqlId, t0, t1 - t0, -1, size, 0L);
+        ctx.emit(EXECUTE_BATCH, id, t0, t1 - t0, -1, size, 0L);
         batchSize = 0;
         return counts;
     }
 
     @Override
     public long[] executeLargeBatch() throws SQLException {
+        CaptureContext ctx = ctxSupplier.get();
+        if (ctx == null) {
+            long[] counts = ps.executeLargeBatch();
+            batchSize = 0;
+            return counts;
+        }
+        int id = resolveSqlId(ctx);
         int size = batchSize;
         long t0 = System.nanoTime();
         long[] counts = ps.executeLargeBatch();
         long t1 = System.nanoTime();
-        ctx.emit(EXECUTE_BATCH, sqlId, t0, t1 - t0, -1, size, 0L);
+        ctx.emit(EXECUTE_BATCH, id, t0, t1 - t0, -1, size, 0L);
         batchSize = 0;
         return counts;
     }

@@ -25,3 +25,7 @@ Thumbs.db
 
 # JMH output
 jmh-result.*
+
+# report output
+analysis/report.html
+analysis/ops/

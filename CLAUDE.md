@@ -58,7 +58,7 @@ layer.
 
 - Group: `fi.vesas`
 - Namespace: `fi.vesas.jdbcprof`
-- Java toolchain: 17 (spec §2 targets JDBC 4.2+ and Java 17+).
+- Java toolchain: 21 (spec §2 targets JDBC 4.2+ and Java 21+).
   Gradle provisions it via toolchains — the JDK on `PATH` can be
   newer.
 

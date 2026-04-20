@@ -31,6 +31,8 @@ final class Bootstrap {
                     + "id INT AUTO_INCREMENT PRIMARY KEY, "
                     + "customer_id INT, "
                     + "amount DECIMAL(10,2), "
+                    + "status VARCHAR(20), "
+                    + "shipped_at TIMESTAMP, "
                     + "refunded BOOLEAN DEFAULT FALSE)");
             s.execute("CREATE TABLE sessions ("
                     + "id INT PRIMARY KEY, last_seen TIMESTAMP)");

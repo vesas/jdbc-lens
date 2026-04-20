@@ -41,11 +41,43 @@ class ProfilerSmokeTest {
     }
 
     @Test
-    void wrapBeforeStartIsRejected() {
-        JdbcDataSource h2 = new JdbcDataSource();
-        h2.setURL("jdbc:h2:mem:noop");
-        assertThatThrownBy(() -> Profiler.wrap(h2))
-                .isInstanceOf(IllegalStateException.class);
+    void wrapBeforeStartIsPassThroughAndBindsLazily(@TempDir Path tmp) throws Exception {
+        // Wrap first, so ordering-sensitive integrations (connection pools
+        // built in a ThreadLocal initializer, for example) don't need to
+        // know anything about Profiler.start().
+        DataSource ds = Profiler.wrap(newH2());
+
+        // Before start(): the wrapped DataSource must work as a plain
+        // pass-through — no session, no events, no exception.
+        try (Connection conn = ds.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT ? AS v")) {
+            ps.setInt(1, 1);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) rs.getInt(1);
+            }
+        }
+
+        Path log = tmp.resolve("lazy.jdbclog");
+        Profiler.start(ProfilerConfig.defaults(log));
+        try {
+            try (Connection conn = ds.getConnection();
+                 PreparedStatement ps = conn.prepareStatement("SELECT ? AS v")) {
+                ps.setInt(1, 2);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) rs.getInt(1);
+                }
+            }
+        } finally {
+            Profiler.stop();
+        }
+
+        // Only the post-start executions should appear in the log.
+        Collected c = readAll(log);
+        assertThat(c.sqls).contains("SELECT ? AS v");
+        List<EventType> types = c.events.stream()
+                .map(e -> EventType.fromCode(e.eventType))
+                .toList();
+        assertThat(types).contains(EventType.PREPARE, EventType.EXECUTE_QUERY, EventType.NEXT);
     }
 
     @Test

@@ -66,4 +66,22 @@ public final class OrderDao {
             ps.executeUpdate();
         }
     }
+
+    public void updateStatus(Connection c, int orderId, String status) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE orders SET status = ? WHERE id = ?")) {
+            ps.setString(1, status);
+            ps.setInt(2, orderId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void markShipped(Connection c, int orderId, java.sql.Timestamp when) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE orders SET shipped_at = ? WHERE id = ?")) {
+            ps.setTimestamp(1, when);
+            ps.setInt(2, orderId);
+            ps.executeUpdate();
+        }
+    }
 }

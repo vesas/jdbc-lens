@@ -33,6 +33,12 @@ public final class RefundService {
             OrderDao.LatestOrder latest = orders.findLatestByCustomer(c, customerId);
             if (latest != null) {
                 orders.markRefunded(c, latest.id());
+                // Simulated external work (payment-gateway call, webhook,
+                // etc.) happening inside the open transaction, after the
+                // UPDATE that took the row lock. Deliberate anti-pattern
+                // so the profiler's "locks held during non-DB work"
+                // finding has something to flag.
+                notifyPaymentGateway(latest.id());
                 audit.log(c, "refund",
                         "customer=" + customerId + " order=" + latest.id()
                                 + " amount=" + latest.amount());
@@ -43,6 +49,16 @@ public final class RefundService {
             throw e;
         } finally {
             c.setAutoCommit(prev);
+        }
+    }
+
+    /** Stand-in for a real HTTP call. Sleeps ~120 ms so the profiler
+     *  sees a wall-clock gap between the UPDATE and the INSERT below. */
+    private static void notifyPaymentGateway(long orderId) {
+        try {
+            Thread.sleep(120L);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 }

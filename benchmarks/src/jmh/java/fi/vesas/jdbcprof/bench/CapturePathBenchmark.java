@@ -77,7 +77,8 @@ public class CapturePathBenchmark {
         sink.start();
 
         DataSource raw = NoopJdbc.dataSource();
-        DataSource wrapped = new CapturingDataSource(raw, ctx);
+        CaptureContext bound = ctx;
+        DataSource wrapped = new CapturingDataSource(raw, () -> bound);
         rawConn = raw.getConnection();
         wrappedConn = wrapped.getConnection();
         rawPs = rawConn.prepareStatement(PREPARED_SQL);

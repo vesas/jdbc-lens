@@ -181,7 +181,7 @@ public final class BinaryLogWriter implements Closeable {
 
     /**
      * Emit a batch of {@code count} events. Each event is encoded in
-     * the fixed 48-byte layout described in spec §5.2.
+     * the fixed 68-byte layout described in spec §5.2.
      */
     public void writeEvents(Event[] batch, int count) throws IOException {
         if (count <= 0) {
@@ -200,6 +200,7 @@ public final class BinaryLogWriter implements Closeable {
         put8(e.timestampNanos);
         put4(e.threadId);
         put8(e.operationId);
+        put8(e.operationInvocationId);
         put1(e.eventType);
         put4(e.sqlId);
         put4(e.stackTraceId);
@@ -208,7 +209,7 @@ public final class BinaryLogWriter implements Closeable {
         put4(e.batchSize);
         put8(e.parameterFingerprint);
         put4(e.parameterValuesId);
-        // 3 bytes of padding to land on a 60-byte boundary.
+        // 3 bytes of padding to land on a 68-byte boundary.
         put1((byte) 0);
         put1((byte) 0);
         put1((byte) 0);

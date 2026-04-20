@@ -21,6 +21,7 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.Calendar;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Wraps a real {@link ResultSet}. Only {@link #next()} and
@@ -31,7 +32,14 @@ import java.util.Map;
  * passed in by {@link CapturingStatement#wrapResultSet(ResultSet)}
  * so NEXT events attribute back to the template that opened the
  * cursor without the result set needing a back-reference to the
- * wrapping statement.
+ * wrapping statement. A {@code sqlId} of {@code -1} means the
+ * producing statement executed with no live session; in that case
+ * NEXT/CLOSE events are skipped because there's nothing to attribute
+ * them to.
+ *
+ * <p>The capture context is resolved per call so an already-open
+ * result set stops emitting after {@code Profiler.stop()} and resumes
+ * if a new session is started (provided {@code sqlId} was interned).
  */
 final class CapturingResultSet implements ResultSet {
 
@@ -39,17 +47,21 @@ final class CapturingResultSet implements ResultSet {
     private static final byte CLOSE = (byte) EventType.CLOSE.ordinal();
 
     private final ResultSet delegate;
-    private final CaptureContext ctx;
+    private final Supplier<CaptureContext> ctxSupplier;
     private final int sqlId;
 
-    CapturingResultSet(ResultSet delegate, CaptureContext ctx, int sqlId) {
+    CapturingResultSet(ResultSet delegate, Supplier<CaptureContext> ctxSupplier, int sqlId) {
         this.delegate = delegate;
-        this.ctx = ctx;
+        this.ctxSupplier = ctxSupplier;
         this.sqlId = sqlId;
     }
 
     @Override
     public boolean next() throws SQLException {
+        CaptureContext ctx = sqlId < 0 ? null : ctxSupplier.get();
+        if (ctx == null) {
+            return delegate.next();
+        }
         long t0 = System.nanoTime();
         boolean hasRow = delegate.next();
         long t1 = System.nanoTime();
@@ -59,6 +71,11 @@ final class CapturingResultSet implements ResultSet {
 
     @Override
     public void close() throws SQLException {
+        CaptureContext ctx = sqlId < 0 ? null : ctxSupplier.get();
+        if (ctx == null) {
+            delegate.close();
+            return;
+        }
         long t0 = System.nanoTime();
         delegate.close();
         long t1 = System.nanoTime();

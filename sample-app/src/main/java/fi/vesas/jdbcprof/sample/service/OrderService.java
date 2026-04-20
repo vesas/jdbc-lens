@@ -67,4 +67,18 @@ public final class OrderService {
         orders.insert(c, customerId, amount);
         notifications.recordCheckout(c, customerId, amount);
     }
+
+    /**
+     * Write-amplification anti-pattern. Two services each "own" a
+     * column on the orders row and both update it on shipment — the
+     * status service flips {@code status} then the logistics service
+     * stamps {@code shipped_at}. Two round-trips, two trigger fires,
+     * two CDC messages for what should be a single UPDATE.
+     * Disjoint SET columns — the detector should label this
+     * "mergeable".
+     */
+    public void finalizeShipment(Connection c, int orderId) throws SQLException {
+        orders.updateStatus(c, orderId, "SHIPPED");
+        orders.markShipped(c, orderId, new java.sql.Timestamp(System.currentTimeMillis()));
+    }
 }

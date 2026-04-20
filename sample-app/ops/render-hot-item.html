@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: render-hot-item</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../sample-report.html">← back to report</a></nav>
+<h1>op: render-hot-item</h1>
+<div class="meta">50 events · 8.70 ms wall · 7.33 ms DB (84%) · 1.37 ms non-DB (16%)</div>
+<div class="split-hero" title="DB 7.33 ms · non-DB 1.37 ms"><span class="split-db" style="flex:84.2034 0 0">DB 7.33 ms</span><span class="split-app" style="flex:15.7966 0 0">non-DB 1.37 ms</span></div>
+<h2>Transactions</h2>
+<p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num" data-raw="2946800">2.95 ms</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="76900">76.90 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="49300">49.30 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">4</td><td class="num" data-raw="49200">49.20 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">5</td><td class="num" data-raw="46200">46.20 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">6</td><td class="num" data-raw="74900">74.90 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">7</td><td class="num" data-raw="50100">50.10 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">8</td><td class="num" data-raw="46500">46.50 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">9</td><td class="num" data-raw="217200">217.20 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+    <tr><td class="num">10</td><td class="num" data-raw="74100">74.10 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="3596000">3.60 ms</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="3798400">3.80 ms</td><td class="num" data-raw="202400">202.40 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="2946800">2.95 ms</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="6835900">6.84 ms</td><td class="num" data-raw="90700">90.70 us</td><td>NEXT</td><td class="num" data-raw="3200">3.20 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="6888300">6.89 ms</td><td class="num" data-raw="49200">49.20 us</td><td>CLOSE</td><td class="num" data-raw="1400">1.40 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="6928300">6.93 ms</td><td class="num" data-raw="38600">38.60 us</td><td>CLOSE</td><td class="num" data-raw="2600">2.60 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="6979000">6.98 ms</td><td class="num" data-raw="48100">48.10 us</td><td>PREPARE</td><td class="num" data-raw="8900">8.90 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7030600">7.03 ms</td><td class="num" data-raw="42700">42.70 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="76900">76.90 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7125700">7.13 ms</td><td class="num" data-raw="18200">18.20 us</td><td>NEXT</td><td class="num" data-raw="1700">1.70 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7144000">7.14 ms</td><td class="num" data-raw="16600">16.60 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7157500">7.16 ms</td><td class="num" data-raw="12500">12.50 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7171600">7.17 ms</td><td class="num" data-raw="12800">12.80 us</td><td>PREPARE</td><td class="num" data-raw="5500">5.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7206800">7.21 ms</td><td class="num" data-raw="29700">29.70 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="49300">49.30 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7270900">7.27 ms</td><td class="num" data-raw="14800">14.80 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7287900">7.29 ms</td><td class="num" data-raw="15500">15.50 us</td><td>CLOSE</td><td class="num" data-raw="900">900 ns</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7301000">7.30 ms</td><td class="num" data-raw="12200">12.20 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7314800">7.31 ms</td><td class="num" data-raw="12700">12.70 us</td><td>PREPARE</td><td class="num" data-raw="4600">4.60 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7346800">7.35 ms</td><td class="num" data-raw="27400">27.40 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="49200">49.20 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7409800">7.41 ms</td><td class="num" data-raw="13800">13.80 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7426300">7.43 ms</td><td class="num" data-raw="15000">15.00 us</td><td>CLOSE</td><td class="num" data-raw="800">800 ns</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7439400">7.44 ms</td><td class="num" data-raw="12300">12.30 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7453100">7.45 ms</td><td class="num" data-raw="12700">12.70 us</td><td>PREPARE</td><td class="num" data-raw="4700">4.70 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7484600">7.48 ms</td><td class="num" data-raw="26800">26.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="46200">46.20 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7545000">7.55 ms</td><td class="num" data-raw="14200">14.20 us</td><td>NEXT</td><td class="num" data-raw="1600">1.60 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7562000">7.56 ms</td><td class="num" data-raw="15400">15.40 us</td><td>CLOSE</td><td class="num" data-raw="900">900 ns</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7575100">7.58 ms</td><td class="num" data-raw="12200">12.20 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7588800">7.59 ms</td><td class="num" data-raw="12600">12.60 us</td><td>PREPARE</td><td class="num" data-raw="4600">4.60 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7621500">7.62 ms</td><td class="num" data-raw="28100">28.10 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="74900">74.90 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7718700">7.72 ms</td><td class="num" data-raw="22300">22.30 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7735800">7.74 ms</td><td class="num" data-raw="15600">15.60 us</td><td>CLOSE</td><td class="num" data-raw="800">800 ns</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7750500">7.75 ms</td><td class="num" data-raw="13900">13.90 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7764000">7.76 ms</td><td class="num" data-raw="12400">12.40 us</td><td>PREPARE</td><td class="num" data-raw="4700">4.70 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="7817300">7.82 ms</td><td class="num" data-raw="48600">48.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="50100">50.10 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="7883800">7.88 ms</td><td class="num" data-raw="16400">16.40 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="7900900">7.90 ms</td><td class="num" data-raw="15600">15.60 us</td><td>CLOSE</td><td class="num" data-raw="800">800 ns</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="7927400">7.93 ms</td><td class="num" data-raw="25700">25.70 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="7946300">7.95 ms</td><td class="num" data-raw="17800">17.80 us</td><td>PREPARE</td><td class="num" data-raw="4900">4.90 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="8002000">8.00 ms</td><td class="num" data-raw="50800">50.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="46500">46.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="8069100">8.07 ms</td><td class="num" data-raw="20600">20.60 us</td><td>NEXT</td><td class="num" data-raw="2000">2.00 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="8101100">8.10 ms</td><td class="num" data-raw="30000">30.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="8129000">8.13 ms</td><td class="num" data-raw="26800">26.80 us</td><td>CLOSE</td><td class="num" data-raw="1600">1.60 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="8152600">8.15 ms</td><td class="num" data-raw="22000">22.00 us</td><td>PREPARE</td><td class="num" data-raw="9200">9.20 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="8209500">8.21 ms</td><td class="num" data-raw="47700">47.70 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="217200">217.20 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="8468800">8.47 ms</td><td class="num" data-raw="42100">42.10 us</td><td>NEXT</td><td class="num" data-raw="2800">2.80 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="8492500">8.49 ms</td><td class="num" data-raw="20900">20.90 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="8508000">8.51 ms</td><td class="num" data-raw="14200">14.20 us</td><td>CLOSE</td><td class="num" data-raw="2500">2.50 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+    <tr><td class="num" data-raw="8527000">8.53 ms</td><td class="num" data-raw="16500">16.50 us</td><td>PREPARE</td><td class="num" data-raw="7500">7.50 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:52</code></td></tr>
+    <tr><td class="num" data-raw="8575100">8.58 ms</td><td class="num" data-raw="40600">40.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="74100">74.10 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:55</code></td></tr>
+    <tr><td class="num" data-raw="8666400">8.67 ms</td><td class="num" data-raw="17200">17.20 us</td><td>NEXT</td><td class="num" data-raw="1800">1.80 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:56</code></td></tr>
+    <tr><td class="num" data-raw="8684600">8.68 ms</td><td class="num" data-raw="16400">16.40 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><code class="sql">SELECT COUNT(*) FROM orders WHERE customer_id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:57</code></td></tr>
+    <tr><td class="num" data-raw="8698600">8.70 ms</td><td class="num" data-raw="13000">13.00 us</td><td>CLOSE</td><td class="num" data-raw="1400">1.40 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.countByCustomer:58</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

@@ -14,7 +14,7 @@ The library does not execute queries, does not modify JDBC behavior, does not re
 
 The library does not capture query parameter values by default. This is an explicit choice: parameter capture is expensive (toString, allocation, string formatting) and adds data-leak risk. A developer debugging a specific issue can enable parameter capture for a bounded window; the default is off.
 
-The library targets JDBC 4.2+ and Java 17+. Older environments are out of scope.
+The library targets JDBC 4.2+ and Java 21+. Older environments are out of scope.
 
 ## 3. Core concepts
 
@@ -56,15 +56,18 @@ An event is a fixed-size record, designed to be zero-allocation to produce and f
 
 - `timestampNanos` — long, 8 bytes, from `System.nanoTime()`
 - `threadId` — int, 4 bytes
-- `operationId` — long, 8 bytes, from the thread-local operation context
+- `operationId` — long, 8 bytes, from the thread-local operation-name context
+- `operationInvocationId` — long, 8 bytes, monotonic id bumped each time `Profiler.currentOperation(name)` is called; lets analysis distinguish separate invocations of the same op name
 - `eventType` — byte, 1 byte (enum: PREPARE, EXECUTE_QUERY, EXECUTE_UPDATE, EXECUTE_BATCH, NEXT, COMMIT, ROLLBACK, CLOSE)
 - `sqlId` — int, 4 bytes, index into the SQL intern table
 - `stackTraceId` — int, 4 bytes, index into the stack trace intern table
 - `durationNanos` — long, 8 bytes (set on completion; 0 for instantaneous events)
 - `rowsAffected` — int, 4 bytes (for UPDATE/DELETE/INSERT; -1 for other types)
 - `batchSize` — int, 4 bytes (for batch operations; 0 otherwise)
+- `parameterFingerprint` — long, 8 bytes (64-bit hash of bound parameters for PreparedStatement executes; 0 otherwise)
+- `parameterValuesId` — int, 4 bytes, index into the parameter-values intern table when value capture is enabled; `-1` otherwise
 
-Total: 45 bytes per event, padded to 48. An event buffer of 1 million events consumes ~48 MB. For a one-hour capture at 1000 events/second, total volume is ~180 MB — tractable on any modern machine.
+Total: 65 bytes per event, padded to 68. An event buffer of 1 million events consumes ~68 MB. For a one-hour capture at 1000 events/second, total volume is ~245 MB — tractable on any modern machine.
 
 ### 5.3 Hot-path performance budget
 
@@ -110,7 +113,7 @@ LMAX Disruptor. More capability than needed (it supports multi-consumer, event c
 
 Start with the hand-rolled version; migrate to Disruptor if benchmarks show the simple implementation is a bottleneck.
 
-Buffer size: 65,536 events per thread by default. At 48 bytes per event this is 3 MB per thread. For 100 threads, 300 MB of buffer memory — acceptable for a profiling tool, configurable downward.
+Buffer size: 65,536 events per thread by default. At 68 bytes per event this is ~4.3 MB per thread. For 100 threads, ~430 MB of buffer memory — acceptable for a profiling tool, configurable downward.
 
 Backpressure policy when a buffer is full: the default is to drop the oldest events (ring-buffer overwrite) and increment a dropped-events counter. An optional strict mode blocks the producer until the sink catches up, for cases where completeness is more important than application latency.
 
@@ -124,7 +127,7 @@ A single daemon thread started at profiler initialization. It iterates over the 
   [SQL template table — count-prefixed array of (id, hash, string)]
   [stack trace table — count-prefixed array of (id, hash, frame-array)]
 [event section]
-  [count-prefixed array of 48-byte event records]
+  [count-prefixed array of 68-byte event records]
 [4-byte checksum]
 ```
 

@@ -63,9 +63,11 @@ DataSource profiled = Profiler.wrap(yourRealDataSource);
 // hand `profiled` to everything that talks to the database
 ```
 
-`Profiler.start` must run before `wrap`. The JVM shutdown hook calls
-`Profiler.stop()` automatically, or call it yourself when the
-workload is done.
+`Profiler.wrap` may be called before or after `Profiler.start` —
+wrapped DataSources resolve the session lazily, so they pass through
+when no profiler is running and start capturing once `start()` fires.
+The JVM shutdown hook calls `Profiler.stop()` automatically, or call
+it yourself when the workload is done.
 
 ### 4. Run your tests / workload
 
@@ -92,5 +94,5 @@ network calls, no external CSS or JS.
 
 ## Requirements
 
-- Java 17+
+- Java 21+
 - Gradle 8+

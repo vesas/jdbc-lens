@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -58,20 +59,40 @@ public final class HtmlReport {
         List<ReadThenWriteFinding> readThenWrite = ReadThenWriteDetector.detect(entityInputs);
         List<OverWideUpdateFinding> overWide = new OverWideUpdateDetector()
                 .detect(m.sqls, m.eventsByOp, m.stacks);
+        List<WriteAmplificationFinding> writeAmp =
+                WriteAmplificationDetector.detect(entityInputs);
+        List<IdleLockFinding> idleLocks = new IdleLockDetector()
+                .detect(m.eventsByOp, m.ops, m.sqls, m.stacks, NO_OPERATION);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
-        renderFindings(out, findings);
-        renderRedundant(out, redundant, m);
-        renderEntityAccess(out, entities, m);
-        renderReadThenWrite(out, readThenWrite, m);
-        renderOverWideUpdate(out, overWide);
-        renderOperations(out, m);
-        renderFlameGraph(out, flame);
-        renderPairsTable(out, m);
-        renderCallSitesTable(out, m);
-        renderTemplatesTable(out, m);
+        section(out, "N+1 findings", () -> renderFindings(out, findings));
+        section(out, "Redundant queries", () -> renderRedundant(out, redundant, m));
+        section(out, "Entity access audit", () -> renderEntityAccess(out, entities, m));
+        section(out, "Read-then-write on the same row",
+                () -> renderReadThenWrite(out, readThenWrite, m));
+        section(out, "Wide UPDATEs (REWRITE RECORD smell)",
+                () -> renderOverWideUpdate(out, overWide));
+        section(out, "Write amplification (UPDATE-then-UPDATE on same row)",
+                () -> renderWriteAmplification(out, writeAmp, m));
+        section(out, "Transactions holding locks during non-DB work",
+                () -> renderIdleLocks(out, idleLocks));
+        section(out, "Operations", () -> renderOperations(out, m));
+        section(out, "Flamegraph", () -> renderFlameGraph(out, flame));
+        section(out, "(Call-site, template) pairs", () -> renderPairsTable(out, m));
+        section(out, "Call-sites", () -> renderCallSitesTable(out, m));
+        section(out, "Templates", () -> renderTemplatesTable(out, m));
         renderFooter(out);
+    }
+
+    // Sections are collapsible and closed by default so the reader can
+    // scan titles first and expand only what matters. <details>/<summary>
+    // keeps the report self-contained — no JS, no external CSS.
+    private static void section(PrintStream out, String title, Runnable body) {
+        out.println("<details class=\"section\"><summary>"
+                + htmlEscape(title) + "</summary>");
+        body.run();
+        out.println("</details>");
     }
 
     private static void writeDrillDownPages(Path mainReportFile, Model m) throws IOException {
@@ -99,13 +120,19 @@ public final class HtmlReport {
     }
 
     private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, Model m) {
-        out.println("<h2>Redundant queries</h2>");
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No repeated (template, parameters) pairs "
                     + "within a single operation. The detector needs op-ids — call "
                     + "<code>Profiler.currentOperation(\"name\")</code> to scope detection.</p>");
             return;
         }
+        out.println("<p class=\"findings-empty\">The same template fired more than once "
+                + "with <strong>identical</strong> parameters inside one logical operation "
+                + "\u2014 usually a lookup that should be cached or fetched once and passed "
+                + "through the call chain. Different from N+1 above: N+1 repeats a template "
+                + "with <strong>different</strong> parameters (a loop over rows); a redundant "
+                + "finding repeats it with <strong>identical</strong> parameters (no "
+                + "caching). Cards are ranked by total DB time.</p>");
         boolean valuesCaptured = !m.paramValuesById.isEmpty();
         out.println("<div class=\"findings\">");
         for (RedundantFinding f : findings) {
@@ -119,15 +146,21 @@ public final class HtmlReport {
             out.println("      <dt>template</dt><dd><code class=\"sql\">"
                     + htmlEscape(f.sql() == null ? "sql[" + f.sqlId() + "]" : f.sql())
                     + "</code></dd>");
-            out.println("      <dt>operation</dt><dd>"
+            out.println("      <dt>inside operation</dt><dd>"
                     + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
                     + "</dd>");
-            out.println("      <dt>call-site</dt><dd>"
+            out.println("      <dt>query fires here</dt><dd>"
                     + htmlEscape(formatFrame(f.callSite())) + "</dd>");
             String valuesRow = renderValues(f, m, valuesCaptured);
             if (valuesRow != null) {
                 out.println(valuesRow);
             }
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Cache the result for the duration of the operation, or fetch it "
+                    + "once at the top and pass the value through the call chain. If the "
+                    + "lookup is cheap and the call path is short, confirm with the team "
+                    + "that caching is worth the invalidation cost before changing "
+                    + "anything.</dd>");
             out.println("    </dl>");
             out.println("  </div>");
         }
@@ -135,34 +168,61 @@ public final class HtmlReport {
     }
 
     private static String renderValues(RedundantFinding f, Model m, boolean valuesCaptured) {
+        if (!valuesCaptured) {
+            return "      <dt>parameters</dt><dd class=\"muted\">(not captured \u2014 "
+                    + "enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>)"
+                    + "</dd>";
+        }
         RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
                 f.opId(), f.sqlId(), f.parameterFingerprint(), f.stackTraceId());
-        Integer id = m.valuesIdForKey.get(key);
-        if (id == null || !valuesCaptured) {
-            if (!valuesCaptured) {
-                return "      <dt>params</dt><dd class=\"muted\">(not captured \u2014 "
-                        + "enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>)"
-                        + "</dd>";
+        Set<Integer> ids = m.valuesIdForKey.get(key);
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        List<ParameterValues> distinct = new ArrayList<>(ids.size());
+        for (Integer id : ids) {
+            ParameterValues pv = m.paramValuesById.get(id);
+            if (pv != null) {
+                distinct.add(pv);
             }
+        }
+        if (distinct.isEmpty()) {
             return null;
         }
-        ParameterValues pv = m.paramValuesById.get(id);
-        if (pv == null) {
-            return null;
-        }
+        Map<Integer, String> labels = ParamLabels.labelsFor(f.sql());
         StringBuilder sb = new StringBuilder();
-        sb.append("      <dt>params</dt><dd><code class=\"sql\">");
-        List<String> slots = pv.slots();
-        for (int i = 0; i < slots.size(); i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(htmlEscape("[" + (i + 1) + "] " + slots.get(i)));
+        sb.append("      <dt>parameters</dt><dd>");
+        if (distinct.size() > 1) {
+            // A single redundant finding aggregates events by fingerprint,
+            // but fingerprint is a 64-bit hash; two distinct value sets
+            // can land in the same bucket. Spell that out so the reader
+            // doesn't assume all N executions used one set of values.
+            sb.append("<div class=\"muted\">")
+                    .append(distinct.size())
+                    .append(" distinct parameter sets share this fingerprint "
+                            + "\u2014 redundancy count is not reliable for this finding:</div>");
         }
-        sb.append("</code></dd>");
+        for (int idx = 0; idx < distinct.size(); idx++) {
+            if (idx > 0) {
+                sb.append("<br>");
+            }
+            sb.append("<code class=\"sql\">");
+            List<String> slots = distinct.get(idx).slots();
+            for (int i = 0; i < slots.size(); i++) {
+                if (i > 0) sb.append(", ");
+                int oneBased = i + 1;
+                String label = labels.get(oneBased);
+                String slot = "[" + oneBased + "] "
+                        + (label == null ? slots.get(i) : label + "=" + slots.get(i));
+                sb.append(htmlEscape(slot));
+            }
+            sb.append("</code>");
+        }
+        sb.append("</dd>");
         return sb.toString();
     }
 
     private static void renderEntityAccess(PrintStream out, List<EntityFinding> findings, Model m) {
-        out.println("<h2>Entity access audit</h2>");
         if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
             out.println("<p class=\"findings-empty\">Parameter values were not captured, "
                     + "so the audit cannot tell which entity each query touched. "
@@ -210,7 +270,6 @@ public final class HtmlReport {
 
     private static void renderReadThenWrite(PrintStream out,
                                              List<ReadThenWriteFinding> findings, Model m) {
-        out.println("<h2>Read-then-write on the same row</h2>");
         if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
             out.println("<p class=\"findings-empty\">Parameter values weren't captured; "
                     + "can't match SELECT + UPDATE on the same key. Enable with "
@@ -263,7 +322,6 @@ public final class HtmlReport {
 
     private static void renderOverWideUpdate(PrintStream out,
                                              List<OverWideUpdateFinding> findings) {
-        out.println("<h2>Wide UPDATEs (REWRITE RECORD smell)</h2>");
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No UPDATE template sets more than "
                     + OverWideUpdateDetector.DEFAULT_THRESHOLD + " columns.</p>");
@@ -295,8 +353,203 @@ public final class HtmlReport {
         out.println("</div>");
     }
 
+    private static void renderWriteAmplification(PrintStream out,
+                                                  List<WriteAmplificationFinding> findings,
+                                                  Model m) {
+        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
+            out.println("<p class=\"findings-empty\">Parameter values weren't captured; "
+                    + "can't match repeated UPDATEs on the same row. Enable with "
+                    + "<code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
+            return;
+        }
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No row was UPDATEd more than once "
+                    + "inside the same operation.</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">Two or more UPDATEs landed on the "
+                + "same row inside one operation \u2014 each a separate round-trip, "
+                + "trigger fire, CDC event, and replication message. The "
+                + "<strong>overlap</strong> label tells you the flavour: "
+                + "<em>mergeable</em> means disjoint SET columns that collapse "
+                + "cleanly into one UPDATE; <em>overlapping</em> means some columns "
+                + "get written twice (the last write wins \u2014 often a stale copy "
+                + "from a different service); <em>redundant</em> means the exact "
+                + "same SET clause fired more than once.</p>");
+        out.println("<div class=\"findings\">");
+        for (WriteAmplificationFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            String entityLabel = f.table() + "." + f.column() + " = " + f.value();
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">"
+                    + f.hits().size() + "\u00D7 UPDATE</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(f.totalDurationNanos()))
+                    + " total DB time \u00B7 " + overlapLabel(f.overlap())
+                    + "</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>entity</dt><dd><code class=\"site\">"
+                    + htmlEscape(entityLabel) + "</code></dd>");
+            out.println("      <dt>operation</dt><dd>"
+                    + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                    + "</dd>");
+            out.println("      <dt>touched by</dt><dd>");
+            for (WriteAmplificationFinding.UpdateHit h : f.hits()) {
+                out.println("        <div><code class=\"sql\">"
+                        + htmlEscape(h.sql() == null ? "sql[" + h.sqlId() + "]" : h.sql())
+                        + "</code> <span class=\"muted\">\u2014 "
+                        + htmlEscape(formatFrame(h.callSite()))
+                        + " \u00B7 "
+                        + htmlEscape(formatDuration(h.durationNanos()))
+                        + "</span></div>");
+            }
+            out.println("      </dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + writeAmpSuggestion(f.overlap())
+                    + "</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static String overlapLabel(WriteAmplificationFinding.Overlap o) {
+        return switch (o) {
+            case DISJOINT -> "<span class=\"wa-tag wa-mergeable\">mergeable</span>";
+            case OVERLAPPING -> "<span class=\"wa-tag wa-overlap\">overlapping</span>";
+            case IDENTICAL -> "<span class=\"wa-tag wa-redundant\">redundant</span>";
+        };
+    }
+
+    private static String writeAmpSuggestion(WriteAmplificationFinding.Overlap o) {
+        return switch (o) {
+            case DISJOINT -> "Collapse into one UPDATE that sets all of the "
+                    + "columns at once. One round-trip, one trigger fire, one "
+                    + "CDC event.";
+            case OVERLAPPING -> "The later UPDATE silently overwrites values "
+                    + "the earlier one set. Usually two services racing to own "
+                    + "the same column \u2014 decide who does, and collapse the "
+                    + "rest into one UPDATE.";
+            case IDENTICAL -> "Every UPDATE here sets the same columns \u2014 "
+                    + "at most one of them is doing useful work. Fetch the row "
+                    + "state once and only write when something actually "
+                    + "changed.";
+        };
+    }
+
+    private static void renderIdleLocks(PrintStream out, List<IdleLockFinding> findings) {
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No explicit transaction held "
+                    + "locks across an idle gap longer than "
+                    + formatDuration(IdleLockDetector.DEFAULT_THRESHOLD_NANOS)
+                    + ". Either all TXs ran back-to-back DB calls, or the app "
+                    + "uses autocommit throughout (see drill-down for shape).</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">Each TX below committed or rolled "
+                + "back at least one write, but between two of its statements the app "
+                + "spent real time <strong>outside</strong> the database — usually an "
+                + "HTTP call, a file read, or heavy CPU work. Row/page locks taken by "
+                + "the earlier writes were held the whole time. The call-site listed "
+                + "below each bar is where execution was when the gap started: that's "
+                + "almost always where the non-DB work is happening.</p>");
+        out.println("<div class=\"findings\">");
+        for (IdleLockFinding f : findings) {
+            double idlePct = f.txDurationNanos() <= 0 ? 0.0
+                    : 100.0 * f.maxIdleGapNanos() / f.txDurationNanos();
+            out.println("  <div class=\"finding\">");
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">"
+                    + htmlEscape(formatDuration(f.maxIdleGapNanos()))
+                    + " idle</span> "
+                    + "<span class=\"finding-time\">"
+                    + String.format(Locale.ROOT, "%.0f%%", idlePct)
+                    + " of a " + htmlEscape(formatDuration(f.txDurationNanos()))
+                    + " transaction"
+                    + "</span></div>");
+            out.println("    " + renderTxGantt(f));
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>operation</dt><dd>"
+                    + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                    + "</dd>");
+            out.println("      <dt>app was here</dt><dd>"
+                    + htmlEscape(formatFrame(f.siteBeforeGap()))
+                    + "</dd>");
+            if (f.sqlBeforeGap() != null) {
+                out.println("      <dt>last statement</dt><dd><code class=\"sql\">"
+                        + htmlEscape(f.sqlBeforeGap()) + "</code></dd>");
+            }
+            if (f.sqlAfterGap() != null) {
+                out.println("      <dt>next statement</dt><dd><code class=\"sql\">"
+                        + htmlEscape(f.sqlAfterGap()) + "</code></dd>");
+            }
+            if (!f.writes().isEmpty()) {
+                out.println("      <dt>locks held</dt><dd>");
+                for (IdleLockFinding.WriteRef w : f.writes()) {
+                    out.println("        <div><code class=\"sql\">"
+                            + htmlEscape(w.sql()) + "</code>"
+                            + (w.count() > 1
+                                ? " <span class=\"muted\">\u00D7 " + w.count() + "</span>"
+                                : "")
+                            + "</div>");
+                }
+                out.println("      </dd>");
+            }
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Move the non-DB work outside the transaction, or split into "
+                    + "two transactions around the gap. If the inner work must run "
+                    + "atomically, commit first and retry compensating work on failure."
+                    + "</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    /**
+     * Horizontal proportional bar: one cell per {@link
+     * IdleLockFinding.Segment}, width = segment duration / TX duration.
+     * Colours are driven by segment kind so the viewer sees the write /
+     * query / idle mix at a glance without reading the legend.
+     */
+    private static String renderTxGantt(IdleLockFinding f) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"tx-bar\" role=\"img\" aria-label=\"Transaction timeline: ")
+                .append(htmlEscape(formatDuration(f.txDurationNanos())))
+                .append(" total, ")
+                .append(htmlEscape(formatDuration(f.maxIdleGapNanos())))
+                .append(" idle\">");
+        long total = Math.max(1L, f.txDurationNanos());
+        for (IdleLockFinding.Segment seg : f.segments()) {
+            double pct = 100.0 * seg.durationNanos() / total;
+            String cls = "tx-seg tx-" + seg.kind().name().toLowerCase(Locale.ROOT).replace('_', '-');
+            if (seg.isMaxGap()) {
+                cls += " tx-max-gap";
+            }
+            String tip;
+            if (seg.kind() == IdleLockFinding.SegmentKind.IDLE) {
+                tip = "IDLE " + formatDuration(seg.durationNanos())
+                        + (seg.isMaxGap() ? " \u2190 longest gap" : "");
+            } else {
+                tip = seg.kind().name() + " " + formatDuration(seg.durationNanos())
+                        + (seg.sql() != null ? " \u2014 " + seg.sql() : "");
+            }
+            sb.append(String.format(Locale.ROOT,
+                    "<span class=\"%s\" style=\"flex:%.4f 0 0\" title=\"%s\"></span>",
+                    cls, Math.max(0.0001, pct), htmlEscape(tip)));
+        }
+        sb.append("</div>");
+        sb.append("<div class=\"tx-legend\">");
+        sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-execute-query\"></i> read</span>");
+        sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-execute-update\"></i> write</span>");
+        sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-idle\"></i> idle</span>");
+        sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-max-gap\"></i> longest gap</span>");
+        sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-commit\"></i> commit</span>");
+        sb.append("</div>");
+        return sb.toString();
+    }
+
     private static void renderOperations(PrintStream out, Model m) {
-        out.println("<h2>Operations</h2>");
         boolean anyOp = m.ops != null && !m.ops.isEmpty();
         if (!anyOp) {
             out.println("<p class=\"findings-empty\">No op-ids were recorded. "
@@ -305,10 +558,20 @@ public final class HtmlReport {
                     + "to group events.</p>");
             return;
         }
+        renderInvocationSwimlanes(out, m);
+        out.println("<p class=\"findings-empty\">"
+                + "<strong>Wall</strong> is the clock time the op took end-to-end. "
+                + "<strong>DB</strong> is how much of that was spent inside JDBC calls. "
+                + "The split bar is DB (blue) vs. non-DB (gray) — a mostly-gray bar "
+                + "means the app, network, or external I/O is where the time went, "
+                + "not the database.</p>");
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Operation</th>"
-                + "<th class=\"num\" data-default-sort=\"desc\" aria-sort=\"desc\">DB time</th>"
+                + "<th class=\"num\">Wall</th>"
+                + "<th class=\"num\" data-default-sort=\"desc\" aria-sort=\"desc\">DB</th>"
+                + "<th class=\"num\">Non-DB</th>"
+                + "<th>DB vs. non-DB</th>"
                 + "<th class=\"num\">Events</th>"
                 + "<th class=\"num\">Templates</th>"
                 + "</tr></thead>");
@@ -332,9 +595,16 @@ public final class HtmlReport {
                         labelCell = "<td><a href=\"" + htmlEscape(href) + "\">"
                                 + "<code class=\"site\">" + htmlEscape(label) + "</code></a></td>";
                     }
+                    List<Event> opEvents = m.eventsByOp.getOrDefault(opId, List.of());
+                    EventGaps.OpBreakdown br = EventGaps.forOp(opEvents);
                     out.println("    <tr>"
                             + labelCell
-                            + tdDuration(s.totalDurationNanos)
+                            + tdDuration(br.wallNanos())
+                            + tdDuration(br.dbNanos())
+                            + tdDuration(br.nonDbNanos())
+                            + "<td class=\"split-cell\" data-raw=\""
+                            + br.nonDbNanos() + "\">"
+                            + renderSplitBar(br) + "</td>"
                             + tdCount(s.count)
                             + tdCount(s.distinctSqls.size())
                             + "</tr>");
@@ -343,8 +613,102 @@ public final class HtmlReport {
         out.println("</table>");
     }
 
+    /**
+     * Two-segment horizontal bar: DB (blue) vs. non-DB (gray). Width
+     * of each side is the fraction of wall time. A tiny visual that
+     * makes "this op is 95% app code" and "this op is 100% DB" jump
+     * out without the reader having to compare two numbers.
+     */
+    private static String renderSplitBar(EventGaps.OpBreakdown br) {
+        if (br.wallNanos() <= 0L) {
+            return "<span class=\"muted\">\u2014</span>";
+        }
+        double dbPct = 100.0 * br.dbFraction();
+        double nonDbPct = 100.0 * br.nonDbFraction();
+        String title = "DB " + formatDuration(br.dbNanos())
+                + " (" + String.format(Locale.ROOT, "%.0f%%", dbPct) + ") \u00B7 non-DB "
+                + formatDuration(br.nonDbNanos())
+                + " (" + String.format(Locale.ROOT, "%.0f%%", nonDbPct) + ")";
+        return "<div class=\"split-bar\" title=\"" + htmlEscape(title) + "\">"
+                + String.format(Locale.ROOT,
+                        "<span class=\"split-db\" style=\"flex:%.4f 0 0\"></span>", Math.max(0.0001, dbPct))
+                + String.format(Locale.ROOT,
+                        "<span class=\"split-app\" style=\"flex:%.4f 0 0\"></span>", Math.max(0.0001, nonDbPct))
+                + "</div>";
+    }
+
+    private static void renderInvocationSwimlanes(PrintStream out, Model m) {
+        if (m.invStats.isEmpty()) {
+            return;
+        }
+        long globalFirst = m.firstTs;
+        long globalSpan = Math.max(1L, m.lastTs - m.firstTs);
+
+        Map<Long, List<InvStats>> byName = new HashMap<>();
+        Map<Long, Long> dbTimeByName = new HashMap<>();
+        for (InvStats is : m.invStats.values()) {
+            byName.computeIfAbsent(is.nameId, k -> new ArrayList<>()).add(is);
+            dbTimeByName.merge(is.nameId, is.totalDurationNanos, Long::sum);
+        }
+        List<Long> nameIds = new ArrayList<>(byName.keySet());
+        nameIds.sort((a, b) -> Long.compare(
+                dbTimeByName.getOrDefault(b, 0L),
+                dbTimeByName.getOrDefault(a, 0L)));
+
+        int viewW = 1000;
+        int labelW = 220;
+        int barColW = viewW - labelW;
+        int laneH = 14;
+        int barH = 10;
+        int headerH = 18;
+        int viewH = headerH + nameIds.size() * laneH + 4;
+
+        out.println("<p class=\"findings-empty\">"
+                + "One bar per invocation of <code>Profiler.currentOperation(name)</code>. "
+                + "Position is wall-clock start; width is that invocation's duration. "
+                + "Hover a bar for details.</p>");
+        out.println("<svg class=\"swimlanes\" viewBox=\"0 0 " + viewW + " " + viewH
+                + "\" preserveAspectRatio=\"none\" role=\"img\" "
+                + "aria-label=\"Operation invocation swim-lanes\" "
+                + "style=\"width:100%;height:auto;font-family:var(--mono);\">");
+        out.println("  <line x1=\"" + labelW + "\" y1=\"" + headerH
+                + "\" x2=\"" + viewW + "\" y2=\"" + headerH
+                + "\" stroke=\"#ccc\" stroke-width=\"0.5\"/>");
+        out.println("  <text x=\"" + labelW + "\" y=\"" + (headerH - 4)
+                + "\" font-size=\"9\" fill=\"#888\">0 ms</text>");
+        out.println("  <text x=\"" + viewW + "\" y=\"" + (headerH - 4)
+                + "\" font-size=\"9\" fill=\"#888\" text-anchor=\"end\">"
+                + htmlEscape(formatDuration(globalSpan)) + "</text>");
+
+        int row = 0;
+        for (Long nameId : nameIds) {
+            String label = m.ops.getOrDefault(nameId, "op[" + nameId + "]");
+            int yCenter = headerH + row * laneH + laneH / 2;
+            out.println("  <text x=\"" + (labelW - 8) + "\" y=\"" + (yCenter + 3)
+                    + "\" font-size=\"10\" text-anchor=\"end\" fill=\"#333\">"
+                    + htmlEscape(label) + "</text>");
+            out.println("  <line x1=\"" + labelW + "\" y1=\"" + (yCenter + laneH / 2)
+                    + "\" x2=\"" + viewW + "\" y2=\"" + (yCenter + laneH / 2)
+                    + "\" stroke=\"#eee\" stroke-width=\"0.3\"/>");
+            for (InvStats is : byName.get(nameId)) {
+                double xFrac = (double) (is.firstTs - globalFirst) / (double) globalSpan;
+                double wFrac = (double) (is.lastTs - is.firstTs) / (double) globalSpan;
+                double x = labelW + xFrac * barColW;
+                double w = Math.max(1.0, wFrac * barColW);
+                String tooltip = label
+                        + "  span=" + formatDuration(is.lastTs - is.firstTs)
+                        + "  events=" + is.count
+                        + "  DB time=" + formatDuration(is.totalDurationNanos);
+                out.println(String.format(Locale.ROOT,
+                        "  <rect class=\"inv-bar\" x=\"%.2f\" y=\"%d\" width=\"%.2f\" height=\"%d\" fill=\"#4a90d9\" fill-opacity=\"0.75\"><title>%s</title></rect>",
+                        x, yCenter - barH / 2, w, barH, htmlEscape(tooltip)));
+            }
+            row++;
+        }
+        out.println("</svg>");
+    }
+
     private static void renderFlameGraph(PrintStream out, FlameGraph.Node root) {
-        out.println("<h2>Flamegraph</h2>");
         out.println("<p class=\"findings-empty\">"
                 + "Widths are total DB time. Hover any frame for its full class + line.</p>");
         FlameGraph.renderHtml(out, root);
@@ -386,15 +750,24 @@ public final class HtmlReport {
         // captureParameterValues = true. Otherwise empty, and the
         // report renders a hint about how to turn value capture on.
         Map<Integer, ParameterValues> paramValuesById = new HashMap<>();
-        // (execute-event-key) -> one paramValuesId seen for this key.
-        // Used by the report to pair a redundant-queries card with the
-        // actual bound values.
-        Map<RedundantQueryDetector.Key, Integer> valuesIdForKey = new HashMap<>();
+        // (execute-event-key) -> every distinct paramValuesId seen for
+        // this key, in insertion order. Usually one entry. More than one
+        // means a fingerprint collision or a regression in fingerprint
+        // composition: events that the detector counted as "the same
+        // query with the same parameters" actually bound different
+        // values, and the report must surface that instead of silently
+        // showing whichever set arrived first.
+        Map<RedundantQueryDetector.Key, Set<Integer>> valuesIdForKey = new HashMap<>();
         // Every event, bucketed by op-id. Memory cost is linear in
         // total events — fine for the recording sizes the Phase-2
         // report is meant for (test-suite scale, not all-day prod).
         // Streaming drill-down is left for later.
         Map<Long, List<Event>> eventsByOp = new HashMap<>();
+        // Per-invocation aggregates (one entry per distinct
+        // operationInvocationId seen). Drives the swim-lane strip in
+        // the Operations section — separate invocations of the same
+        // op name share an `operationId` but get distinct entries here.
+        Map<Long, InvStats> invStats = new HashMap<>();
 
         static Model load(Path input) throws IOException {
             Model m = new Model();
@@ -459,6 +832,24 @@ public final class HtmlReport {
                             os.distinctSqls.add(e.sqlId);
                         }
                         m.eventsByOp.computeIfAbsent(e.operationId, k -> new ArrayList<>()).add(e);
+                        if (e.operationInvocationId >= 0L) {
+                            InvStats is = m.invStats.computeIfAbsent(
+                                    e.operationInvocationId, k -> new InvStats());
+                            if (is.count == 0L) {
+                                is.nameId = e.operationId;
+                                is.firstTs = e.timestampNanos;
+                                is.lastTs = end;
+                            } else {
+                                if (e.timestampNanos < is.firstTs) {
+                                    is.firstTs = e.timestampNanos;
+                                }
+                                if (end > is.lastTs) {
+                                    is.lastTs = end;
+                                }
+                            }
+                            is.count++;
+                            is.totalDurationNanos += dur;
+                        }
                         if (isExecute(e.eventType) && e.parameterFingerprint != 0L) {
                             RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
                                     e.operationId, e.sqlId, e.parameterFingerprint, e.stackTraceId);
@@ -467,7 +858,9 @@ public final class HtmlReport {
                             rs.count++;
                             rs.totalDurationNanos += dur;
                             if (e.parameterValuesId >= 0) {
-                                m.valuesIdForKey.putIfAbsent(key, e.parameterValuesId);
+                                m.valuesIdForKey
+                                        .computeIfAbsent(key, k -> new LinkedHashSet<>())
+                                        .add(e.parameterValuesId);
                             }
                         }
                     }
@@ -495,6 +888,17 @@ public final class HtmlReport {
         long count;
         long totalDurationNanos;
         Set<Integer> distinctSqls = new HashSet<>();
+    }
+
+    /** One invocation of {@code Profiler.currentOperation(name)}: event span on
+     *  the wall-clock timeline, the name-id it ran under, and a small activity
+     *  summary for the swim-lane tooltip. */
+    private static final class InvStats {
+        long nameId;
+        long firstTs;
+        long lastTs;
+        long count;
+        long totalDurationNanos;
     }
 
     // --- rendering ---
@@ -527,6 +931,33 @@ public final class HtmlReport {
                 }
                 h1 { margin: 0 0 4px 0; font-size: 20px; }
                 h2 { margin: 32px 0 12px 0; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+                details.section {
+                  margin: 24px 0 0 0;
+                  border-bottom: 1px solid var(--border);
+                }
+                details.section > summary {
+                  font-size: 16px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  padding: 8px 0;
+                  list-style: none;
+                  display: flex;
+                  align-items: center;
+                  user-select: none;
+                }
+                details.section > summary::-webkit-details-marker { display: none; }
+                details.section > summary::before {
+                  content: "\\25B8";
+                  display: inline-block;
+                  width: 14px;
+                  margin-right: 10px;
+                  color: var(--fg-muted);
+                  font-size: 12px;
+                  text-align: center;
+                }
+                details.section[open] > summary::before { content: "\\25BE"; }
+                details.section > summary:hover { color: var(--accent); }
+                details.section > *:not(summary) { margin-bottom: 12px; }
                 .meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 20px; }
                 .meta code { font-family: var(--mono); background: var(--bg-alt); padding: 1px 5px; border-radius: 3px; }
                 .stats {
@@ -640,6 +1071,93 @@ public final class HtmlReport {
                 code.sql { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
                 code.site { font-family: var(--mono); font-size: 12px; }
                 .muted { color: var(--fg-muted); }
+                /* Two-segment wall-clock split used in the Operations table
+                   and as a drill-down hero bar. flex basis 0 + flex-grow =
+                   proportional widths without having to compute percents. */
+                .split-bar {
+                  display: flex;
+                  width: 100%;
+                  min-width: 80px;
+                  height: 10px;
+                  border-radius: 3px;
+                  overflow: hidden;
+                  background: var(--border);
+                }
+                .split-db { background: #4a90d9; }
+                .split-app { background: #d0d7de; }
+                td.split-cell { width: 120px; }
+                .split-hero {
+                  display: flex;
+                  width: 100%;
+                  height: 20px;
+                  border-radius: 4px;
+                  overflow: hidden;
+                  background: var(--border);
+                  margin: 8px 0 6px 0;
+                  font-family: var(--mono);
+                  font-size: 11px;
+                  color: #fff;
+                }
+                .split-hero > span {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  padding: 0 6px;
+                }
+                .split-hero .split-db { background: #4a90d9; }
+                .split-hero .split-app { background: #8a94a0; }
+                /* Idle-lock finding: mini-Gantt of a single transaction. */
+                .tx-bar {
+                  display: flex;
+                  width: 100%;
+                  height: 22px;
+                  border-radius: 4px;
+                  overflow: hidden;
+                  background: var(--border);
+                  margin: 10px 0 4px 0;
+                }
+                .tx-bar > .tx-seg { display: block; min-width: 1px; }
+                .tx-seg.tx-execute-query  { background: #4a90d9; }
+                .tx-seg.tx-execute-update { background: #2e7d32; }
+                .tx-seg.tx-execute-batch  { background: #1b5e20; }
+                .tx-seg.tx-prepare        { background: #bdbdbd; }
+                .tx-seg.tx-commit         { background: #424242; }
+                .tx-seg.tx-rollback       { background: #b71c1c; }
+                .tx-seg.tx-idle           { background: #ffcc80; }
+                .tx-seg.tx-max-gap        { background: #e53935; }
+                .tx-seg.tx-other          { background: #9e9e9e; }
+                .tx-legend {
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 12px;
+                  margin-bottom: 10px;
+                  font-size: 11px;
+                  color: var(--fg-muted);
+                }
+                .tx-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+                .tx-legend-item i {
+                  display: inline-block;
+                  width: 12px;
+                  height: 12px;
+                  border-radius: 2px;
+                }
+                /* Overlap classification pill on write-amplification findings. */
+                .wa-tag {
+                  display: inline-block;
+                  padding: 1px 8px;
+                  border-radius: 10px;
+                  font-size: 11px;
+                  font-weight: 600;
+                  text-transform: uppercase;
+                  letter-spacing: 0.04em;
+                  color: #fff;
+                  font-family: var(--mono);
+                }
+                .wa-tag.wa-mergeable { background: #2e7d32; }
+                .wa-tag.wa-overlap   { background: #ef6c00; }
+                .wa-tag.wa-redundant { background: #c62828; }
                 footer { margin-top: 48px; font-size: 12px; color: var(--fg-muted); text-align: center; }
                 """);
         out.println("</style>");
@@ -680,12 +1198,17 @@ public final class HtmlReport {
     }
 
     private static void renderFindings(PrintStream out, List<N1Finding> findings) {
-        out.println("<h2>N+1 findings</h2>");
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No N+1 patterns detected above the default "
                     + "thresholds (count \u2265 10, share \u2265 0.9).</p>");
             return;
         }
+        out.println("<p class=\"findings-empty\">A template fired many times from one "
+                + "call-site \u2014 usually a loop that runs one query per row instead "
+                + "of one batched query. Parameters typically differ per call (one ID "
+                + "per row). Cards are ranked by total DB time; count is across the "
+                + "whole recording. See <em>Redundant queries</em> below for the "
+                + "identical-parameters variant.</p>");
         out.println("<div class=\"findings\">");
         for (N1Finding f : findings) {
             out.println("  <div class=\"finding\">");
@@ -695,10 +1218,21 @@ public final class HtmlReport {
                     + "</div>");
             out.println("    <dl class=\"finding-kv\">");
             out.println("      <dt>template</dt><dd>" + tdContent(sqlLabel(f.sql(), f.sqlId())) + "</dd>");
-            out.println("      <dt>call-site</dt><dd>" + htmlEscape(formatFrame(f.representativeSite())) + "</dd>");
+            out.println("      <dt>query fires here</dt><dd>"
+                    + htmlEscape(formatFrame(f.representativeSite())) + "</dd>");
+            String ancestorCell;
             if (f.ancestor() != null && !f.ancestor().equals(f.representativeSite())) {
-                out.println("      <dt>ancestor</dt><dd>" + htmlEscape(formatFrame(f.ancestor())) + "</dd>");
+                ancestorCell = htmlEscape(formatFrame(f.ancestor()));
+            } else {
+                ancestorCell = "<span class=\"muted\">(same as query site \u2014 "
+                        + "no outer application frame above it)</span>";
             }
+            out.println("      <dt>outer loop (probable fix)</dt><dd>"
+                    + ancestorCell + "</dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Replace the inner query with a batched/join query that returns "
+                    + "all rows in one round-trip, or fetch the full collection once "
+                    + "and pass it through.</dd>");
             out.println("    </dl>");
             out.println("  </div>");
         }
@@ -716,7 +1250,6 @@ public final class HtmlReport {
     }
 
     private static void renderPairsTable(PrintStream out, Model m) {
-        out.println("<h2>(Call-site, template) pairs</h2>");
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Call-site</th>"
@@ -740,7 +1273,6 @@ public final class HtmlReport {
     }
 
     private static void renderCallSitesTable(PrintStream out, Model m) {
-        out.println("<h2>Call-sites</h2>");
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Call-site</th>"
@@ -765,7 +1297,6 @@ public final class HtmlReport {
     }
 
     private static void renderTemplatesTable(PrintStream out, Model m) {
-        out.println("<h2>Templates</h2>");
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Template</th>"

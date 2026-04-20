@@ -8,15 +8,21 @@ import fi.vesas.jdbcprof.storage.BinaryLogWriter;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.function.Supplier;
 
 /**
  * Public entry points for the JDBC call-site profiler (spec §10).
  *
  * <p>Lifecycle: {@link #start(ProfilerConfig)} installs a session,
- * {@link #wrap(DataSource)} binds application DataSources to it,
- * {@link #stop()} drains and closes the recording. The session is a
- * process-wide singleton — there is no scenario in Phase 1 for
- * multiple concurrent recordings.
+ * {@link #wrap(DataSource)} returns a capturing DataSource bound to
+ * the current session, {@link #stop()} drains and closes the
+ * recording. The session is a process-wide singleton — there is no
+ * scenario in Phase 1 for multiple concurrent recordings.
+ *
+ * <p>{@code wrap()} may be called before {@code start()}. Wrapped
+ * DataSources resolve the session lazily on every JDBC call, so they
+ * silently pass through while no session is active, start capturing
+ * events when {@code start()} fires, and stop again after {@code stop()}.
  *
  * <p>A JVM shutdown hook calls {@link #stop()} automatically so a
  * recording is flushed even if the application terminates without
@@ -27,12 +33,18 @@ public final class Profiler {
     private static volatile Session session;
     private static final Object LOCK = new Object();
 
+    private static final Supplier<CaptureContext> CTX = () -> {
+        Session s = session;
+        return s == null ? null : s.ctx;
+    };
+
     private Profiler() {
     }
 
     /**
-     * Begins recording. Must be called before {@link #wrap(DataSource)}
-     * so that wrapped DataSources bind to a live session.
+     * Begins recording. May be called before or after
+     * {@link #wrap(DataSource)} — wrapped DataSources pick up the
+     * live session lazily.
      */
     public static void start(ProfilerConfig config) {
         if (config == null) {
@@ -87,19 +99,17 @@ public final class Profiler {
 
     /**
      * Wraps a real {@link DataSource} so every JDBC operation flowing
-     * through it is captured. Requires {@link #start(ProfilerConfig)}
-     * to have been called; events from a DataSource wrapped before
-     * {@code start} have nowhere to go.
+     * through it is captured while a profiler session is active. When
+     * no session is running the wrapper is effectively pass-through —
+     * it resolves the current session on every call, so it's safe to
+     * install at application startup and toggle recording with
+     * {@link #start(ProfilerConfig)} / {@link #stop()} later.
      */
     public static DataSource wrap(DataSource real) {
         if (real == null) {
             throw new IllegalArgumentException("real DataSource must not be null");
         }
-        Session s = session;
-        if (s == null) {
-            throw new IllegalStateException("Profiler.start() must be called before wrap()");
-        }
-        return new CapturingDataSource(real, s.ctx);
+        return new CapturingDataSource(real, CTX);
     }
 
     /**

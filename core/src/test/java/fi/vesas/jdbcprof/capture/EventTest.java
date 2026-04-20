@@ -13,6 +13,7 @@ class EventTest {
         assertThat(e.timestampNanos).isZero();
         assertThat(e.threadId).isZero();
         assertThat(e.operationId).isZero();
+        assertThat(e.operationInvocationId).isEqualTo(-1L);
         assertThat(e.eventType).isZero();
         assertThat(e.sqlId).isZero();
         assertThat(e.stackTraceId).isZero();
@@ -29,6 +30,7 @@ class EventTest {
         assertThat(dst.timestampNanos).isEqualTo(src.timestampNanos);
         assertThat(dst.threadId).isEqualTo(src.threadId);
         assertThat(dst.operationId).isEqualTo(src.operationId);
+        assertThat(dst.operationInvocationId).isEqualTo(src.operationInvocationId);
         assertThat(dst.eventType).isEqualTo(src.eventType);
         assertThat(dst.sqlId).isEqualTo(src.sqlId);
         assertThat(dst.stackTraceId).isEqualTo(src.stackTraceId);
@@ -49,6 +51,7 @@ class EventTest {
         e.timestampNanos = 1_000_000_001L;
         e.threadId = 42;
         e.operationId = 7L;
+        e.operationInvocationId = 11L;
         e.eventType = EventType.EXECUTE_QUERY.code();
         e.sqlId = 3;
         e.stackTraceId = 9;

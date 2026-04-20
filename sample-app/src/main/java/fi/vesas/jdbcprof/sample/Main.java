@@ -77,19 +77,37 @@ public final class Main {
             Profiler.currentOperation("heartbeat");
             sessionService.refresh(c, 1, 2, 3, 4, 5);
 
+            // Each checkout / refund / profile update is logically its
+            // own user-facing operation. Calling currentOperation() per
+            // invocation gives the report a distinct invocation id for
+            // each, so the drill-down timeline shows per-invocation
+            // dividers and the swim-lane shows one bar per call.
             Profiler.currentOperation("complete-checkout");
             orderService.completeCheckout(c, 7, new java.math.BigDecimal("59.90"));
+            Profiler.currentOperation("complete-checkout");
             orderService.completeCheckout(c, 12, new java.math.BigDecimal("149.00"));
+            Profiler.currentOperation("complete-checkout");
             orderService.completeCheckout(c, 23, new java.math.BigDecimal("39.95"));
 
             Profiler.currentOperation("refund-latest");
             refundService.refundLatest(c, 7);
+            Profiler.currentOperation("refund-latest");
             refundService.refundLatest(c, 12);
+            Profiler.currentOperation("refund-latest");
             refundService.refundLatest(c, 23);
+
+            Profiler.currentOperation("finalize-shipment");
+            orderService.finalizeShipment(c, 1);
+            Profiler.currentOperation("finalize-shipment");
+            orderService.finalizeShipment(c, 2);
+            Profiler.currentOperation("finalize-shipment");
+            orderService.finalizeShipment(c, 3);
 
             Profiler.currentOperation("update-profile");
             profileService.updatePhone(c, 7, "+1-555-1001");
+            Profiler.currentOperation("update-profile");
             profileService.updatePhone(c, 12, "+1-555-1002");
+            Profiler.currentOperation("update-profile");
             profileService.updatePhone(c, 23, "+1-555-1003");
 
             Profiler.currentOperation("daily-report");

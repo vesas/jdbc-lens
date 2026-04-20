@@ -5,28 +5,34 @@ import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
  * Wraps an application-supplied {@link DataSource}. Every
- * {@link Connection} handed out is a {@link CapturingConnection} bound
- * to the same {@link CaptureContext} so events reach a single sink
- * (spec §5.1).
+ * {@link Connection} handed out is a {@link CapturingConnection}
+ * bound to the same {@link CaptureContext} supplier so events flow to
+ * a single sink when one is active (spec §5.1).
+ *
+ * <p>The supplier is resolved on every JDBC call, which lets the
+ * wrapper be installed before a profiler session exists: until
+ * {@code Profiler.start()} runs, the supplier returns {@code null}
+ * and wrapped connections pass through without capturing.
  */
 public final class CapturingDataSource implements DataSource {
 
     private final DataSource delegate;
-    private final CaptureContext ctx;
+    private final Supplier<CaptureContext> ctxSupplier;
 
-    public CapturingDataSource(DataSource delegate, CaptureContext ctx) {
+    public CapturingDataSource(DataSource delegate, Supplier<CaptureContext> ctxSupplier) {
         if (delegate == null) {
             throw new IllegalArgumentException("delegate must not be null");
         }
-        if (ctx == null) {
-            throw new IllegalArgumentException("ctx must not be null");
+        if (ctxSupplier == null) {
+            throw new IllegalArgumentException("ctxSupplier must not be null");
         }
         this.delegate = delegate;
-        this.ctx = ctx;
+        this.ctxSupplier = ctxSupplier;
     }
 
     public DataSource delegate() {
@@ -35,12 +41,12 @@ public final class CapturingDataSource implements DataSource {
 
     @Override
     public Connection getConnection() throws SQLException {
-        return new CapturingConnection(delegate.getConnection(), ctx);
+        return new CapturingConnection(delegate.getConnection(), ctxSupplier);
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
-        return new CapturingConnection(delegate.getConnection(username, password), ctx);
+        return new CapturingConnection(delegate.getConnection(username, password), ctxSupplier);
     }
 
     @Override

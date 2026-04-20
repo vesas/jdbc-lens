@@ -31,7 +31,9 @@ class BinaryLogWriterTest {
             w.writeStackDelta(0, stacks);
             Event[] batch = new Event[2];
             batch[0] = event(100L, 1, (byte) EventType.EXECUTE_QUERY.ordinal(), 0, 0, 250L, -1, 0);
+            batch[0].operationInvocationId = 17L;
             batch[1] = event(200L, 1, (byte) EventType.EXECUTE_UPDATE.ordinal(), 1, 0, 300L, 1, 0);
+            batch[1].operationInvocationId = 18L;
             w.writeEvents(batch, 2);
         }
 
@@ -52,8 +54,10 @@ class BinaryLogWriterTest {
 
         assertThat(c.events).hasSize(2);
         assertThat(c.events.get(0).timestampNanos).isEqualTo(100L);
+        assertThat(c.events.get(0).operationInvocationId).isEqualTo(17L);
         assertThat(c.events.get(1).sqlId).isEqualTo(1);
         assertThat(c.events.get(1).rowsAffected).isEqualTo(1);
+        assertThat(c.events.get(1).operationInvocationId).isEqualTo(18L);
     }
 
     @Test

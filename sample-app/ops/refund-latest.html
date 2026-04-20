@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: refund-latest</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../sample-report.html">← back to report</a></nav>
+<h1>op: refund-latest</h1>
+<div class="meta">36 events · 395.60 ms wall · 3.37 ms DB (1%) · 392.23 ms non-DB (99%)</div>
+<div class="split-hero" title="DB 3.37 ms · non-DB 392.23 ms"><span class="split-db" style="flex:0.8527 0 0"></span><span class="split-app" style="flex:99.1473 0 0">non-DB 392.23 ms</span></div>
+<h2>Transactions</h2>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr class="tx-flagged"><td class="num">1</td><td class="num" data-raw="139312900">139.31 ms</td><td class="num">2</td><td class="num">2</td><td class="num idle-bad" data-raw="134463800">134.46 ms</td><td>commit</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td></tr>
+    <tr class="tx-flagged"><td class="num">2</td><td class="num" data-raw="132028200">132.03 ms</td><td class="num">2</td><td class="num">2</td><td class="num idle-bad" data-raw="130677700">130.68 ms</td><td>commit</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td></tr>
+    <tr class="tx-flagged"><td class="num">3</td><td class="num" data-raw="124024000">124.02 ms</td><td class="num">2</td><td class="num">2</td><td class="num idle-bad" data-raw="122051600">122.05 ms</td><td>commit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="378900">378.90 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:34</code></td></tr>
+    <tr><td class="num" data-raw="491500">491.50 us</td><td class="num" data-raw="112600">112.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="210100">210.10 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><code class="sql">[1] 7</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:37</code></td></tr>
+    <tr><td class="num" data-raw="742400">742.40 us</td><td class="num" data-raw="40800">40.80 us</td><td>NEXT</td><td class="num" data-raw="1900">1.90 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:38</code></td></tr>
+    <tr><td class="num" data-raw="2987500">2.99 ms</td><td class="num" data-raw="2243200">2.24 ms</td><td>CLOSE</td><td class="num" data-raw="2900">2.90 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:39</code></td></tr>
+    <tr><td class="num" data-raw="3470000">3.47 ms</td><td class="num" data-raw="479600">479.60 us</td><td>CLOSE</td><td class="num" data-raw="10300">10.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:40</code></td></tr>
+    <tr><td class="num" data-raw="3526300">3.53 ms</td><td class="num" data-raw="46000">46.00 us</td><td>PREPARE</td><td class="num" data-raw="233800">233.80 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:44</code></td></tr>
+    <tr><td class="num" data-raw="3822800">3.82 ms</td><td class="num" data-raw="62700">62.70 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="328800">328.80 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><code class="sql">[1] 101</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:47</code></td></tr>
+    <tr><td class="num" data-raw="4207400">4.21 ms</td><td class="num" data-raw="55800">55.80 us</td><td>CLOSE</td><td class="num" data-raw="6900">6.90 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:48</code></td></tr>
+    <tr class="gap-row"><td class="num" data-raw="138678100">138.68 ms</td><td class="num" data-raw="134463800">134.46 ms</td><td>PREPARE</td><td class="num" data-raw="29400">29.40 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="138897100">138.90 ms</td><td class="num" data-raw="189600">189.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="174200">174.20 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] refund, [2] customer=7 order=101 amount=59.90</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="139121000">139.12 ms</td><td class="num" data-raw="49700">49.70 us</td><td>CLOSE</td><td class="num" data-raw="2800">2.80 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="139155600">139.16 ms</td><td class="num" data-raw="31800">31.80 us</td><td>COMMIT</td><td class="num" data-raw="157300">157.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.service.RefundService.refundLatest:46</code></td></tr>
+    <tr class="inv-divider"><td colspan="7">Invocation 2 of 3 · 12 events · 799.10 us DB time</td></tr>
+    <tr><td class="num" data-raw="139440300">139.44 ms</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="14600">14.60 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:34</code></td></tr>
+    <tr><td class="num" data-raw="139543500">139.54 ms</td><td class="num" data-raw="88600">88.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="143200">143.20 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><code class="sql">[1] 12</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:37</code></td></tr>
+    <tr><td class="num" data-raw="139722700">139.72 ms</td><td class="num" data-raw="36000">36.00 us</td><td>NEXT</td><td class="num" data-raw="3000">3.00 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:38</code></td></tr>
+    <tr><td class="num" data-raw="139758200">139.76 ms</td><td class="num" data-raw="32500">32.50 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:39</code></td></tr>
+    <tr><td class="num" data-raw="139783600">139.78 ms</td><td class="num" data-raw="24100">24.10 us</td><td>CLOSE</td><td class="num" data-raw="2200">2.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:40</code></td></tr>
+    <tr><td class="num" data-raw="139821600">139.82 ms</td><td class="num" data-raw="35800">35.80 us</td><td>PREPARE</td><td class="num" data-raw="6500">6.50 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:44</code></td></tr>
+    <tr><td class="num" data-raw="139864600">139.86 ms</td><td class="num" data-raw="36500">36.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="163500">163.50 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><code class="sql">[1] 102</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:47</code></td></tr>
+    <tr><td class="num" data-raw="140060400">140.06 ms</td><td class="num" data-raw="32300">32.30 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:48</code></td></tr>
+    <tr class="gap-row"><td class="num" data-raw="270739400">270.74 ms</td><td class="num" data-raw="130677700">130.68 ms</td><td>PREPARE</td><td class="num" data-raw="31300">31.30 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="270964300">270.96 ms</td><td class="num" data-raw="193600">193.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="160300">160.30 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] refund, [2] customer=12 order=102 amount=149.00</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="271172500">271.17 ms</td><td class="num" data-raw="47900">47.90 us</td><td>CLOSE</td><td class="num" data-raw="8400">8.40 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="271205000">271.21 ms</td><td class="num" data-raw="24100">24.10 us</td><td>COMMIT</td><td class="num" data-raw="263500">263.50 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.service.RefundService.refundLatest:46</code></td></tr>
+    <tr class="inv-divider"><td colspan="7">Invocation 3 of 3 · 12 events · 1.04 ms DB time</td></tr>
+    <tr><td class="num" data-raw="271580200">271.58 ms</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="25800">25.80 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:34</code></td></tr>
+    <tr><td class="num" data-raw="271709300">271.71 ms</td><td class="num" data-raw="103300">103.30 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="92900">92.90 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><code class="sql">[1] 23</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:37</code></td></tr>
+    <tr><td class="num" data-raw="271831300">271.83 ms</td><td class="num" data-raw="29100">29.10 us</td><td>NEXT</td><td class="num" data-raw="2500">2.50 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:38</code></td></tr>
+    <tr><td class="num" data-raw="271864300">271.86 ms</td><td class="num" data-raw="30500">30.50 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT id, amount FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:39</code></td></tr>
+    <tr><td class="num" data-raw="271887900">271.89 ms</td><td class="num" data-raw="22500">22.50 us</td><td>CLOSE</td><td class="num" data-raw="1700">1.70 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.findLatestByCustomer:40</code></td></tr>
+    <tr><td class="num" data-raw="271910200">271.91 ms</td><td class="num" data-raw="20600">20.60 us</td><td>PREPARE</td><td class="num" data-raw="4700">4.70 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:44</code></td></tr>
+    <tr><td class="num" data-raw="271950800">271.95 ms</td><td class="num" data-raw="35900">35.90 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="153800">153.80 us</td><td><code class="sql">UPDATE orders SET refunded = TRUE WHERE id = ?</code></td><td><code class="sql">[1] 103</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:47</code></td></tr>
+    <tr><td class="num" data-raw="272135500">272.14 ms</td><td class="num" data-raw="30900">30.90 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.markRefunded:48</code></td></tr>
+    <tr class="gap-row"><td class="num" data-raw="394188400">394.19 ms</td><td class="num" data-raw="122051600">122.05 ms</td><td>PREPARE</td><td class="num" data-raw="114700">114.70 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="394874800">394.87 ms</td><td class="num" data-raw="571700">571.70 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="439200">439.20 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] refund, [2] customer=23 order=103 amount=39.95</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="395374600">395.37 ms</td><td class="num" data-raw="60600">60.60 us</td><td>CLOSE</td><td class="num" data-raw="8400">8.40 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="395413300">395.41 ms</td><td class="num" data-raw="30300">30.30 us</td><td>COMMIT</td><td class="num" data-raw="190900">190.90 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.service.RefundService.refundLatest:46</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

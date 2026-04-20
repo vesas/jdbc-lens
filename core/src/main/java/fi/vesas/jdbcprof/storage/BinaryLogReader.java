@@ -174,6 +174,7 @@ public final class BinaryLogReader {
             e.timestampNanos = bb.getLong();
             e.threadId = bb.getInt();
             e.operationId = bb.getLong();
+            e.operationInvocationId = bb.getLong();
             e.eventType = bb.get();
             e.sqlId = bb.getInt();
             e.stackTraceId = bb.getInt();

@@ -35,7 +35,8 @@ class CaptureIntegrationTest {
         h2.setURL("jdbc:h2:mem:cap_" + UUID.randomUUID().toString().replace('-', '_')
                 + ";DB_CLOSE_DELAY=-1");
         ctx = new CaptureContext(64, 20);
-        ds = new CapturingDataSource(h2, ctx);
+        CaptureContext bound = ctx;
+        ds = new CapturingDataSource(h2, () -> bound);
     }
 
     @Test
@@ -131,6 +132,64 @@ class CaptureIntegrationTest {
         List<Event> events = drainAll();
         assertThat(eventsOfType(events, EventType.COMMIT)).hasSize(1);
         assertThat(eventsOfType(events, EventType.ROLLBACK)).hasSize(1);
+    }
+
+    @Test
+    void repeatedCurrentOperationCallsYieldDistinctInvocationIds() throws Exception {
+        try (Connection conn = ds.getConnection();
+             Statement ddl = conn.createStatement()) {
+            ddl.execute("CREATE TABLE t(id INT)");
+        }
+
+        ctx.setCurrentOperation("processOrder");
+        try (Connection conn = ds.getConnection();
+             Statement st = conn.createStatement()) {
+            st.executeUpdate("INSERT INTO t VALUES (1)");
+        }
+
+        ctx.setCurrentOperation("processOrder");
+        try (Connection conn = ds.getConnection();
+             Statement st = conn.createStatement()) {
+            st.executeUpdate("INSERT INTO t VALUES (2)");
+        }
+
+        List<Event> events = drainAll();
+        int opNameId = ctx.opIntern().intern("processOrder");
+        List<Long> invIdsForOp = new ArrayList<>();
+        for (Event e : events) {
+            if (e.operationId == opNameId) {
+                invIdsForOp.add(e.operationInvocationId);
+            }
+        }
+        assertThat(invIdsForOp).isNotEmpty();
+        assertThat(invIdsForOp.stream().distinct().count())
+                .as("two invocations of the same op name should carry distinct invocation ids")
+                .isEqualTo(2L);
+        assertThat(invIdsForOp).allSatisfy(id -> assertThat(id).isGreaterThanOrEqualTo(0L));
+    }
+
+    @Test
+    void nullCurrentOperationClearsInvocationId() throws Exception {
+        try (Connection conn = ds.getConnection();
+             Statement ddl = conn.createStatement()) {
+            ddl.execute("CREATE TABLE t(id INT)");
+        }
+
+        ctx.setCurrentOperation("firstOp");
+        ctx.setCurrentOperation(null);
+        try (Connection conn = ds.getConnection();
+             Statement st = conn.createStatement()) {
+            st.executeUpdate("INSERT INTO t VALUES (1)");
+        }
+
+        List<Event> post = drainAll().stream()
+                .filter(e -> e.eventType == EventType.EXECUTE_UPDATE.code())
+                .toList();
+        assertThat(post).isNotEmpty();
+        assertThat(post).allSatisfy(e -> {
+            assertThat(e.operationId).isEqualTo(CaptureContext.NO_OPERATION);
+            assertThat(e.operationInvocationId).isEqualTo(CaptureContext.NO_OPERATION_INVOCATION);
+        });
     }
 
     @Test
