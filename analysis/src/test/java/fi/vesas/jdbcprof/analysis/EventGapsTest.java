@@ -58,6 +58,22 @@ class EventGapsTest {
     }
 
     @Test
+    void multiThreadOverlapWithIdleTailCountedAsUnion() {
+        // Thread 1 busy [0,10ms] and [90,100ms]; thread 2 busy [0,10ms].
+        // True DB-busy union = [0,10] ∪ [90,100] = 20ms. Summing per-thread
+        // busy would give 30ms — the 0-10ms slice double-counted across
+        // threads — and min-clamp to wall (100ms) wouldn't hide it.
+        List<Event> events = new ArrayList<>();
+        events.add(event(1, 0L, 10_000_000L));
+        events.add(event(1, 90_000_000L, 10_000_000L));
+        events.add(event(2, 0L, 10_000_000L));
+        EventGaps.OpBreakdown br = EventGaps.forOp(events);
+        assertThat(br.wallNanos()).isEqualTo(100_000_000L);
+        assertThat(br.dbNanos()).isEqualTo(20_000_000L);
+        assertThat(br.nonDbNanos()).isEqualTo(80_000_000L);
+    }
+
+    @Test
     void adjacentGapsBetweenEventsOnOneThread() {
         List<Event> events = new ArrayList<>();
         events.add(event(1, 0L, 10L));    // ends at 10

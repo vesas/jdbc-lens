@@ -4,9 +4,7 @@ import fi.vesas.jdbcprof.capture.Event;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Shared gap arithmetic used by both the wall-vs-DB breakdown on the
@@ -68,39 +66,37 @@ public final class EventGaps {
         }
         long firstTs = Long.MAX_VALUE;
         long lastTs = Long.MIN_VALUE;
-        Map<Integer, List<long[]>> byThread = new HashMap<>();
+        List<long[]> intervals = new ArrayList<>(events.size());
         for (Event e : events) {
             long dur = Math.max(0L, e.durationNanos);
             long start = e.timestampNanos;
             long end = start + dur;
             if (start < firstTs) firstTs = start;
             if (end > lastTs) lastTs = end;
-            byThread.computeIfAbsent(e.threadId, k -> new ArrayList<>())
-                    .add(new long[] {start, end});
+            intervals.add(new long[] {start, end});
         }
         long wall = Math.max(0L, lastTs - firstTs);
 
-        // Per-thread events can't truly overlap (one thread = one
-        // JDBC call in flight), but nanoTime drift or clock reordering
-        // around an event boundary can make them look like they do.
-        // Merging is defensive and essentially free.
+        // Union across all threads in one sweep. Per-thread events can't
+        // truly overlap (one thread = one JDBC call in flight), but parallel
+        // ops run concurrent calls on different threads — their overlap is
+        // one slice of DB-busy wall time, not two. A single merged sweep
+        // handles both cases and absorbs any cross-event nanoTime jitter.
+        intervals.sort(Comparator.comparingLong(a -> a[0]));
         long busy = 0L;
-        for (List<long[]> intervals : byThread.values()) {
-            intervals.sort(Comparator.comparingLong(a -> a[0]));
-            long curStart = intervals.get(0)[0];
-            long curEnd = intervals.get(0)[1];
-            for (int i = 1; i < intervals.size(); i++) {
-                long[] iv = intervals.get(i);
-                if (iv[0] <= curEnd) {
-                    if (iv[1] > curEnd) curEnd = iv[1];
-                } else {
-                    busy += curEnd - curStart;
-                    curStart = iv[0];
-                    curEnd = iv[1];
-                }
+        long curStart = intervals.get(0)[0];
+        long curEnd = intervals.get(0)[1];
+        for (int i = 1; i < intervals.size(); i++) {
+            long[] iv = intervals.get(i);
+            if (iv[0] <= curEnd) {
+                if (iv[1] > curEnd) curEnd = iv[1];
+            } else {
+                busy += curEnd - curStart;
+                curStart = iv[0];
+                curEnd = iv[1];
             }
-            busy += curEnd - curStart;
         }
+        busy += curEnd - curStart;
         long db = Math.min(busy, wall);
         long nonDb = Math.max(0L, wall - db);
         return new OpBreakdown(wall, db, nonDb);
