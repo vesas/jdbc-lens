@@ -32,6 +32,13 @@ public final class BinaryLogReader {
         default void onOpDelta(int firstId, List<String> names) {}
         default void onParamValuesDelta(int firstId, List<ParameterValues> entries) {}
         default void onEvents(List<Event> events) {}
+        /**
+         * One-shot environment snapshot written at recording start.
+         * Present in recordings produced by profiler builds that ship
+         * {@link LogFormat#REC_RECORDING_META}; older recordings never
+         * fire this callback.
+         */
+        default void onRecordingMeta(String userDir, String classpath, String command) {}
     }
 
     private final Path path;
@@ -67,6 +74,7 @@ public final class BinaryLogReader {
                 case LogFormat.REC_STACK_DELTA -> readStackDelta(bb, handler);
                 case LogFormat.REC_OP_DELTA -> readOpDelta(bb, handler);
                 case LogFormat.REC_PARAM_VALUES_DELTA -> readParamValuesDelta(bb, handler);
+                case LogFormat.REC_RECORDING_META -> readRecordingMeta(bb, handler);
                 case LogFormat.REC_EVENTS -> readEvents(bb, handler);
                 case LogFormat.REC_END -> {
                     if (bb.position() != recordEnd || bb.hasRemaining()) {
@@ -95,6 +103,20 @@ public final class BinaryLogReader {
             throw new IOException(String.format(
                     "checksum mismatch: stored=0x%08X computed=0x%08X", stored, computed));
         }
+    }
+
+    private static void readRecordingMeta(ByteBuffer bb, Handler handler) {
+        String userDir = readUtf(bb);
+        String classpath = readUtf(bb);
+        String command = readUtf(bb);
+        handler.onRecordingMeta(userDir, classpath, command);
+    }
+
+    private static String readUtf(ByteBuffer bb) {
+        int len = bb.getInt();
+        byte[] bytes = new byte[len];
+        bb.get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private static void readSqlDelta(ByteBuffer bb, Handler handler) {

@@ -58,6 +58,31 @@ public final class OrderDao {
         }
     }
 
+    public BigDecimal sumAmountByCustomer(Connection c, int customerId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT SUM(amount) FROM orders WHERE customer_id = ?")) {
+            ps.setInt(1, customerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return BigDecimal.ZERO;
+                }
+                BigDecimal v = rs.getBigDecimal(1);
+                return v == null ? BigDecimal.ZERO : v;
+            }
+        }
+    }
+
+    public java.sql.Timestamp latestOrderAtByCustomer(Connection c, int customerId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT shipped_at FROM orders WHERE customer_id = ? "
+                        + "ORDER BY id DESC LIMIT 1")) {
+            ps.setInt(1, customerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getTimestamp(1) : null;
+            }
+        }
+    }
+
     public void insert(Connection c, int customerId, BigDecimal amount) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
                 "INSERT INTO orders (customer_id, amount) VALUES (?, ?)")) {
@@ -80,6 +105,15 @@ public final class OrderDao {
         try (PreparedStatement ps = c.prepareStatement(
                 "UPDATE orders SET shipped_at = ? WHERE id = ?")) {
             ps.setTimestamp(1, when);
+            ps.setInt(2, orderId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void updateAmount(Connection c, int orderId, BigDecimal amount) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE orders SET amount = ? WHERE id = ?")) {
+            ps.setBigDecimal(1, amount);
             ps.setInt(2, orderId);
             ps.executeUpdate();
         }

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: outbox-seed</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../report.html">← back to report</a></nav>
+<h1>op: outbox-seed</h1>
+<div class="meta">24 events · 1.56 ms wall · 944.10 us DB (61%) · 611.60 us non-DB (39%)</div>
+<div class="split-hero" title="DB 944.10 us · non-DB 611.60 us"><span class="split-db" style="flex:60.6865 0 0">DB 944.10 us</span><span class="split-app" style="flex:39.3135 0 0">non-DB 611.60 us</span></div>
+<h2>Transactions</h2>
+<p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num" data-raw="165400">165.40 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="69000">69.00 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="234100">234.10 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">4</td><td class="num" data-raw="122100">122.10 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">5</td><td class="num" data-raw="54500">54.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">6</td><td class="num" data-raw="53000">53.00 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">7</td><td class="num" data-raw="54000">54.00 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+    <tr><td class="num">8</td><td class="num" data-raw="75500">75.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="93100">93.10 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="187000">187.00 us</td><td class="num" data-raw="93900">93.90 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="165400">165.40 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 0, [3] 2026-04-20 22:26:00.184</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="381300">381.30 us</td><td class="num" data-raw="28900">28.90 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="407100">407.10 us</td><td class="num" data-raw="25100">25.10 us</td><td>PREPARE</td><td class="num" data-raw="2200">2.20 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="443000">443.00 us</td><td class="num" data-raw="33700">33.70 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="69000">69.00 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 1, [3] 2026-04-20 22:26:00.184</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="523700">523.70 us</td><td class="num" data-raw="11700">11.70 us</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="536600">536.60 us</td><td class="num" data-raw="12300">12.30 us</td><td>PREPARE</td><td class="num" data-raw="1800">1.80 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="570000">570.00 us</td><td class="num" data-raw="31600">31.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="234100">234.10 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 2, [3] 2026-04-20 22:26:00.184</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="848100">848.10 us</td><td class="num" data-raw="44000">44.00 us</td><td>CLOSE</td><td class="num" data-raw="2200">2.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="876100">876.10 us</td><td class="num" data-raw="25800">25.80 us</td><td>PREPARE</td><td class="num" data-raw="5300">5.30 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="947000">947.00 us</td><td class="num" data-raw="65600">65.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="122100">122.10 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 3, [3] 2026-04-20 22:26:00.185</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="1082600">1.08 ms</td><td class="num" data-raw="13500">13.50 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="1096000">1.10 ms</td><td class="num" data-raw="12700">12.70 us</td><td>PREPARE</td><td class="num" data-raw="1900">1.90 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="1130400">1.13 ms</td><td class="num" data-raw="32500">32.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="54500">54.50 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 4, [3] 2026-04-20 22:26:00.185</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="1196200">1.20 ms</td><td class="num" data-raw="11300">11.30 us</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="1208700">1.21 ms</td><td class="num" data-raw="11900">11.90 us</td><td>PREPARE</td><td class="num" data-raw="1900">1.90 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="1249500">1.25 ms</td><td class="num" data-raw="38900">38.90 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="53000">53.00 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 5, [3] 2026-04-20 22:26:00.185</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="1313400">1.31 ms</td><td class="num" data-raw="10900">10.90 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="1325600">1.33 ms</td><td class="num" data-raw="11500">11.50 us</td><td>PREPARE</td><td class="num" data-raw="1700">1.70 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="1357500">1.36 ms</td><td class="num" data-raw="30200">30.20 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="54000">54.00 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 6, [3] 2026-04-20 22:26:00.185</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="1422700">1.42 ms</td><td class="num" data-raw="11200">11.20 us</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+    <tr><td class="num" data-raw="1434900">1.43 ms</td><td class="num" data-raw="11600">11.60 us</td><td>PREPARE</td><td class="num" data-raw="1900">1.90 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:24</code></td></tr>
+    <tr><td class="num" data-raw="1468300">1.47 ms</td><td class="num" data-raw="31500">31.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="75500">75.50 us</td><td><code class="sql">INSERT INTO outbox_events (kind, payload, status, created_at) VALUES (?, ?, &#39;PENDING&#39;, ?)</code></td><td><code class="sql">[1] seed.notification, [2] prewarm event 7, [3] 2026-04-20 22:26:00.185</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:30</code></td></tr>
+    <tr><td class="num" data-raw="1555100">1.56 ms</td><td class="num" data-raw="11300">11.30 us</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OutboxDao.enqueue:31</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

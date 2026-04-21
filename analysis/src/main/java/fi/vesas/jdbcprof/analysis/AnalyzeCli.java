@@ -11,19 +11,25 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 /**
- * CLI entry point for the offline analysis stage (spec §8).
+ * The {@code analyze} subcommand of the {@code jdbc-profile} CLI
+ * (spec §8). Reads a recording and produces either a text dump
+ * (stdout or a {@code .txt} file) or an HTML report (when the
+ * output path ends with {@code .html}/{@code .htm}).
  *
- * <p>Phase 2 starter: dumps a recording to human-readable text via
- * {@link TextDumper}. The HTML report and attribution passes land in
- * follow-up commits; the command name stays {@code analyze} so the
- * later HTML behaviour is a format toggle rather than a rename.
+ * <p>Mounted under the root {@link Cli} so the canonical invocation
+ * is {@code jdbc-profile analyze <recording>} as documented in the
+ * project README and CLAUDE.md. A thin {@link #main} is retained so
+ * the subcommand can still be run standalone when convenient.
  */
 @Command(
-        name = "jdbc-profile analyze",
-        description = "Read a jdbc-prof recording and dump it as text.",
+        name = "analyze",
+        description = "Read a jdbc-prof recording and render it "
+                + "(text dump by default; HTML when output ends in .html).",
         mixinStandardHelpOptions = true)
 public final class AnalyzeCli implements Callable<Integer> {
 
@@ -35,6 +41,17 @@ public final class AnalyzeCli implements Callable<Integer> {
             description = "Write output to this file (default: stdout).")
     private Path output;
 
+    @Option(names = "--source-root", paramLabel = "<path>",
+            description = "Source root to scan for SQL literals. Repeatable. "
+                    + "When omitted, the analyzer auto-infers roots from the "
+                    + "classpath captured in the recording.")
+    private List<Path> sourceRoots = new ArrayList<>();
+
+    @Option(names = "--no-source-scan",
+            description = "Disable static source scanning entirely. The Cache "
+                    + "Candidates section shows runtime data only.")
+    private boolean noSourceScan;
+
     @Override
     public Integer call() throws IOException {
         if (output == null) {
@@ -42,7 +59,7 @@ public final class AnalyzeCli implements Callable<Integer> {
             return 0;
         }
         if (isHtml(output)) {
-            HtmlReport.write(recording, output);
+            HtmlReport.write(recording, output, sourceRoots, noSourceScan);
             return 0;
         }
         try (OutputStream os = Files.newOutputStream(output);

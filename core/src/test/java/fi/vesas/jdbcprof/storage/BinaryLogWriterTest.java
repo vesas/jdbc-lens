@@ -61,6 +61,40 @@ class BinaryLogWriterTest {
     }
 
     @Test
+    void recordingMetaRoundTrips(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("meta.jdbclog");
+        try (BinaryLogWriter w = new BinaryLogWriter(file)) {
+            w.writeRecordingMeta(
+                    "C:/work/example-app",
+                    "build/classes/java/main;lib/postgres.jar",
+                    "fi.vesas.jdbcprof.sample.Main");
+            w.writeSqlDelta(0, List.of("SELECT 1"));
+        }
+        Collector c = new Collector();
+        new BinaryLogReader(file).read(c);
+        assertThat(c.metas).hasSize(1);
+        Meta m = c.metas.get(0);
+        assertThat(m.userDir).isEqualTo("C:/work/example-app");
+        assertThat(m.classpath).isEqualTo("build/classes/java/main;lib/postgres.jar");
+        assertThat(m.command).isEqualTo("fi.vesas.jdbcprof.sample.Main");
+    }
+
+    @Test
+    void recordingMetaNormalisesNulls(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("meta-null.jdbclog");
+        try (BinaryLogWriter w = new BinaryLogWriter(file)) {
+            w.writeRecordingMeta(null, null, null);
+        }
+        Collector c = new Collector();
+        new BinaryLogReader(file).read(c);
+        assertThat(c.metas).hasSize(1);
+        Meta m = c.metas.get(0);
+        assertThat(m.userDir).isEmpty();
+        assertThat(m.classpath).isEmpty();
+        assertThat(m.command).isEmpty();
+    }
+
+    @Test
     void emptyDeltasDoNotWriteRecords(@TempDir Path tmp) throws IOException {
         Path file = tmp.resolve("empty.jdbclog");
         try (BinaryLogWriter w = new BinaryLogWriter(file)) {
@@ -111,6 +145,7 @@ class BinaryLogWriterTest {
         final List<SqlDelta> sqlDeltas = new ArrayList<>();
         final List<StackDelta> stackDeltas = new ArrayList<>();
         final List<Event> events = new ArrayList<>();
+        final List<Meta> metas = new ArrayList<>();
 
         @Override public void onSqlDelta(int firstId, List<String> sqls) {
             sqlDeltas.add(new SqlDelta(firstId, sqls));
@@ -121,8 +156,12 @@ class BinaryLogWriterTest {
         @Override public void onEvents(List<Event> batch) {
             events.addAll(batch);
         }
+        @Override public void onRecordingMeta(String userDir, String classpath, String command) {
+            metas.add(new Meta(userDir, classpath, command));
+        }
     }
 
     private record SqlDelta(int firstId, List<String> sqls) {}
     private record StackDelta(int firstId, List<StackFrameSnapshot[]> stacks) {}
+    private record Meta(String userDir, String classpath, String command) {}
 }

@@ -3,12 +3,18 @@ package fi.vesas.jdbcprof.sample;
 import fi.vesas.jdbcprof.Profiler;
 import fi.vesas.jdbcprof.ProfilerConfig;
 import fi.vesas.jdbcprof.sample.batch.DailyReportJob;
+import fi.vesas.jdbcprof.sample.batch.OutboxDispatcher;
+import fi.vesas.jdbcprof.sample.batch.ReconciliationJob;
 import fi.vesas.jdbcprof.sample.batch.StatementBuilder;
 import fi.vesas.jdbcprof.sample.dao.AuditDao;
+import fi.vesas.jdbcprof.sample.dao.BalanceDao;
 import fi.vesas.jdbcprof.sample.dao.CustomerDao;
+import fi.vesas.jdbcprof.sample.dao.ExceptionDao;
 import fi.vesas.jdbcprof.sample.dao.OrderDao;
+import fi.vesas.jdbcprof.sample.dao.OutboxDao;
 import fi.vesas.jdbcprof.sample.dao.SessionDao;
 import fi.vesas.jdbcprof.sample.dao.SettingsDao;
+import fi.vesas.jdbcprof.sample.service.BulkOpsService;
 import fi.vesas.jdbcprof.sample.service.CatalogService;
 import fi.vesas.jdbcprof.sample.service.NotificationService;
 import fi.vesas.jdbcprof.sample.service.OrderService;
@@ -50,6 +56,13 @@ public final class Main {
         SessionService sessionService = new SessionService(sessionDao);
         RefundService refundService = new RefundService(orders, audit);
         ProfileService profileService = new ProfileService(customers);
+        BulkOpsService bulkOps = new BulkOpsService(orders, customers);
+        OutboxDao outboxDao = new OutboxDao();
+        BalanceDao balanceDao = new BalanceDao();
+        ExceptionDao exceptionDao = new ExceptionDao();
+        ReconciliationJob reconciliationJob = new ReconciliationJob(
+                orders, balanceDao, exceptionDao, outboxDao);
+        OutboxDispatcher outboxDispatcher = new OutboxDispatcher(outboxDao, audit);
         DailyReportJob reportJob = new DailyReportJob(
                 new StatementBuilder(customers, orders, audit));
 
@@ -109,6 +122,45 @@ public final class Main {
             profileService.updatePhone(c, 12, "+1-555-1002");
             Profiler.currentOperation("update-profile");
             profileService.updatePhone(c, 23, "+1-555-1003");
+
+            // Two bulk jobs shaped as row-by-row cursor loops \u2014
+            // one SELECT/UPDATE pair per iteration. The analyzer
+            // should flag the {@code orders} UPDATE as an N+1 writer
+            // and the {@code customers} loop as stacked
+            // read-then-write + wide UPDATE.
+            Profiler.currentOperation("apply-flat-discount");
+            bulkOps.applyFlatDiscount(c, 20, new java.math.BigDecimal("0.10"));
+
+            Profiler.currentOperation("migrate-timezone");
+            bulkOps.migrateTimezone(c,
+                    new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+                    "America/New_York");
+
+            // Prime the outbox with a handful of pre-existing events
+            // so the dispatcher has a non-empty queue on first tick
+            // independent of what reconciliation produces.
+            Profiler.currentOperation("outbox-seed");
+            for (int i = 0; i < 8; i++) {
+                outboxDao.enqueue(c, "seed.notification",
+                        "prewarm event " + i);
+            }
+
+            // Monthly reconciliation \u2014 per-customer aggregate,
+            // upsert via READ-then-WRITE, tripped threshold enqueues
+            // an outbox event for the dispatcher to pick up.
+            Profiler.currentOperation("monthly-reconciliation");
+            int[] reconBatch = new int[20];
+            for (int i = 0; i < reconBatch.length; i++) {
+                reconBatch[i] = i + 1;
+            }
+            reconciliationJob.run(c, reconBatch);
+
+            // Dispatcher tick \u2014 drains the outbox (seed events +
+            // anything reconciliation added). Deliberate row-by-row
+            // UPDATE shape; each event is one markSent/markFailed
+            // round trip.
+            Profiler.currentOperation("outbox-dispatch");
+            outboxDispatcher.drain(c, 10);
 
             Profiler.currentOperation("daily-report");
             reportJob.run(c, new int[] {1, 7, 12, 23, 42});

@@ -55,6 +55,33 @@ public final class BinaryLogWriter implements Closeable {
     }
 
     /**
+     * Emit the one-shot environment snapshot that powers source-root
+     * auto-discovery at analyze time. Intended to be called exactly
+     * once, immediately after construction, before any deltas or
+     * events. Null inputs are normalised to empty strings so the
+     * reader contract never sees a null.
+     */
+    public void writeRecordingMeta(String userDir, String classpath, String command)
+            throws IOException {
+        byte[] u = nullSafe(userDir);
+        byte[] c = nullSafe(classpath);
+        byte[] cmd = nullSafe(command);
+        int payloadLen = 4 + u.length + 4 + c.length + 4 + cmd.length;
+        put1(LogFormat.REC_RECORDING_META);
+        put4(payloadLen);
+        put4(u.length);
+        putBytes(u);
+        put4(c.length);
+        putBytes(c);
+        put4(cmd.length);
+        putBytes(cmd);
+    }
+
+    private static byte[] nullSafe(String s) {
+        return (s == null ? "" : s).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
      * Emit a SQL intern-table delta. {@code firstId} is the id of the
      * first entry in {@code sqls}; subsequent entries are {@code
      * firstId+1}, {@code firstId+2}, … (intern ids are dense —

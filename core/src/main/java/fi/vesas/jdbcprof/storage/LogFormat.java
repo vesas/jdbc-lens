@@ -41,6 +41,15 @@ public final class LogFormat {
     /** Delta flush of {@link fi.vesas.jdbcprof.capture.ParameterValuesInternTable} entries. */
     public static final byte REC_PARAM_VALUES_DELTA = 6;
 
+    /**
+     * One-shot environment snapshot (user.dir, java.class.path,
+     * sun.java.command) written immediately after the header so the
+     * analyze step can auto-discover source roots without a flag.
+     * Older readers fall through the unknown-type arm of the reader
+     * switch and skip past the record.
+     */
+    public static final byte REC_RECORDING_META = 7;
+
     /** Fixed wire size of one event record, including trailing padding. */
     public static final int EVENT_BYTES = 68;
 }

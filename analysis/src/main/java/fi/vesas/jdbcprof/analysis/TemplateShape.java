@@ -3,9 +3,11 @@ package fi.vesas.jdbcprof.analysis;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -91,6 +93,92 @@ public record TemplateShape(
         }
 
         return new TemplateShape(kind, table.toLowerCase(Locale.ROOT), cols, setCols);
+    }
+
+    /**
+     * Every table-like identifier mentioned after {@code FROM},
+     * {@code JOIN}, {@code UPDATE}, or {@code INSERT INTO} — including
+     * inside subqueries. Coverage-oriented companion to {@link #of}:
+     * {@code of} rejects joins and subqueries (returning {@code null})
+     * because the downstream entity-identity detectors need a single
+     * primary table. This method loses that guarantee on purpose so
+     * cache-safety analysis can see every table that contributed to a
+     * statement.
+     *
+     * <p>Regex-based: occasional false positives (e.g. a keyword used
+     * as an alias) are the price of not pulling in a SQL parser. For
+     * the "is it safe to cache" question, over-reporting reads is
+     * strictly better than under-reporting them.
+     */
+    public static Set<String> referencedTables(String sql) {
+        if (sql == null) {
+            return Set.of();
+        }
+        String trimmed = sql.trim();
+        if (trimmed.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> out = new LinkedHashSet<>();
+        collectMatches(trimmed, FROM_TABLE, out);
+        collectMatches(trimmed, JOIN_TABLE, out);
+        collectMatches(trimmed, INSERT_INTO_TABLE, out);
+        String upper = trimmed.toUpperCase(Locale.ROOT);
+        // UPDATE-as-statement-start only — avoid matching "FOR UPDATE"
+        // or "... FOR UPDATE OF col".
+        if (upper.startsWith("UPDATE")) {
+            Matcher m = UPDATE_TABLE.matcher(trimmed);
+            if (m.find()) {
+                out.add(stripQuotes(m.group(1)).toLowerCase(Locale.ROOT));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Primary DML target of an {@code UPDATE}, {@code DELETE FROM}, or
+     * {@code INSERT INTO} — the single table the statement writes to.
+     * Returns {@code null} for {@code SELECT}s or statements we can't
+     * classify. Used by the cache-safety audit to decide which
+     * referenced table is the write target versus a read context.
+     */
+    public static String writeTarget(String sql) {
+        if (sql == null) {
+            return null;
+        }
+        String trimmed = sql.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String upper = trimmed.toUpperCase(Locale.ROOT);
+        Matcher m;
+        if (upper.startsWith("UPDATE")) {
+            m = UPDATE_TABLE.matcher(trimmed);
+        } else if (upper.startsWith("DELETE")) {
+            m = DELETE_TABLE.matcher(trimmed);
+        } else if (upper.startsWith("INSERT")) {
+            m = INSERT_INTO_TABLE.matcher(trimmed);
+        } else {
+            return null;
+        }
+        return m.find() ? stripQuotes(m.group(1)).toLowerCase(Locale.ROOT) : null;
+    }
+
+    private static final Pattern FROM_TABLE =
+            Pattern.compile("(?is)\\bFROM\\s+([\\w\"]+)");
+    private static final Pattern JOIN_TABLE =
+            Pattern.compile("(?is)\\bJOIN\\s+([\\w\"]+)");
+    private static final Pattern UPDATE_TABLE =
+            Pattern.compile("(?is)^\\s*UPDATE\\s+([\\w\"]+)");
+    private static final Pattern DELETE_TABLE =
+            Pattern.compile("(?is)^\\s*DELETE\\s+FROM\\s+([\\w\"]+)");
+    private static final Pattern INSERT_INTO_TABLE =
+            Pattern.compile("(?is)\\bINSERT\\s+INTO\\s+([\\w\"]+)");
+
+    private static void collectMatches(String sql, Pattern p, Set<String> out) {
+        Matcher m = p.matcher(sql);
+        while (m.find()) {
+            out.add(stripQuotes(m.group(1)).toLowerCase(Locale.ROOT));
+        }
     }
 
     private static Kind findKind(String upper) {

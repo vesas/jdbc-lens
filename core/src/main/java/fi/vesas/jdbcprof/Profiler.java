@@ -60,6 +60,13 @@ public final class Profiler {
             BinaryLogWriter writer;
             try {
                 writer = new BinaryLogWriter(config.outputFile());
+                // One-shot environment snapshot. Safe to do here on the
+                // caller's thread: the writer is single-owner until we
+                // hand it to the Sink below.
+                writer.writeRecordingMeta(
+                        System.getProperty("user.dir", ""),
+                        System.getProperty("java.class.path", ""),
+                        System.getProperty("sun.java.command", ""));
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to open " + config.outputFile(), e);
             }

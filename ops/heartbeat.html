@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: heartbeat</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../report.html">← back to report</a></nav>
+<h1>op: heartbeat</h1>
+<div class="meta">15 events · 2.30 ms wall · 1.87 ms DB (81%) · 432.60 us non-DB (19%)</div>
+<div class="split-hero" title="DB 1.87 ms · non-DB 432.60 us"><span class="split-db" style="flex:81.1897 0 0">DB 1.87 ms</span><span class="split-app" style="flex:18.8103 0 0">non-DB 432.60 us</span></div>
+<h2>Transactions</h2>
+<p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num" data-raw="126200">126.20 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="71800">71.80 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="70500">70.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td></tr>
+    <tr><td class="num">4</td><td class="num" data-raw="49700">49.70 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td></tr>
+    <tr><td class="num">5</td><td class="num" data-raw="97900">97.90 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="1422100">1.42 ms</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:10</code></td></tr>
+    <tr><td class="num" data-raw="1539100">1.54 ms</td><td class="num" data-raw="117000">117.00 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="126200">126.20 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><code class="sql">[1] 1</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:13</code></td></tr>
+    <tr><td class="num" data-raw="1708400">1.71 ms</td><td class="num" data-raw="43100">43.10 us</td><td>CLOSE</td><td class="num" data-raw="1200">1.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:14</code></td></tr>
+    <tr><td class="num" data-raw="1746900">1.75 ms</td><td class="num" data-raw="37300">37.30 us</td><td>PREPARE</td><td class="num" data-raw="6400">6.40 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:10</code></td></tr>
+    <tr><td class="num" data-raw="1781400">1.78 ms</td><td class="num" data-raw="28100">28.10 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="71800">71.80 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><code class="sql">[1] 2</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:13</code></td></tr>
+    <tr><td class="num" data-raw="1870200">1.87 ms</td><td class="num" data-raw="17000">17.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:14</code></td></tr>
+    <tr><td class="num" data-raw="1883600">1.88 ms</td><td class="num" data-raw="12300">12.30 us</td><td>PREPARE</td><td class="num" data-raw="5000">5.00 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:10</code></td></tr>
+    <tr><td class="num" data-raw="1914400">1.91 ms</td><td class="num" data-raw="25800">25.80 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="70500">70.50 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><code class="sql">[1] 3</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:13</code></td></tr>
+    <tr><td class="num" data-raw="1999600">2.00 ms</td><td class="num" data-raw="14700">14.70 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:14</code></td></tr>
+    <tr><td class="num" data-raw="2012700">2.01 ms</td><td class="num" data-raw="12000">12.00 us</td><td>PREPARE</td><td class="num" data-raw="4700">4.70 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:10</code></td></tr>
+    <tr><td class="num" data-raw="2042400">2.04 ms</td><td class="num" data-raw="25000">25.00 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="49700">49.70 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><code class="sql">[1] 4</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:13</code></td></tr>
+    <tr><td class="num" data-raw="2105900">2.11 ms</td><td class="num" data-raw="13800">13.80 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:14</code></td></tr>
+    <tr><td class="num" data-raw="2125800">2.13 ms</td><td class="num" data-raw="18900">18.90 us</td><td>PREPARE</td><td class="num" data-raw="7200">7.20 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:10</code></td></tr>
+    <tr><td class="num" data-raw="2177000">2.18 ms</td><td class="num" data-raw="44000">44.00 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="97900">97.90 us</td><td><code class="sql">UPDATE sessions SET last_seen = CURRENT_TIMESTAMP WHERE id = ?</code></td><td><code class="sql">[1] 5</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:13</code></td></tr>
+    <tr><td class="num" data-raw="2298500">2.30 ms</td><td class="num" data-raw="23600">23.60 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SessionDao.touchLastSeen:14</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

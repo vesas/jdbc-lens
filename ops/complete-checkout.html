@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: complete-checkout</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../report.html">← back to report</a></nav>
+<h1>op: complete-checkout</h1>
+<div class="meta">87 events · 14.04 ms wall · 2.79 ms DB (20%) · 11.26 ms non-DB (80%)</div>
+<div class="split-hero" title="DB 2.79 ms · non-DB 11.26 ms"><span class="split-db" style="flex:19.8519 0 0">DB 2.79 ms</span><span class="split-app" style="flex:80.1481 0 0">non-DB 11.26 ms</span></div>
+<h2>Transactions</h2>
+<p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num" data-raw="76500">76.50 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="44000">44.00 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="99000">99.00 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">4</td><td class="num" data-raw="115600">115.60 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">5</td><td class="num" data-raw="80600">80.60 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">6</td><td class="num" data-raw="526300">526.30 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+    <tr><td class="num">7</td><td class="num" data-raw="123800">123.80 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+    <tr><td class="num">8</td><td class="num" data-raw="120400">120.40 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">9</td><td class="num" data-raw="263000">263.00 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">10</td><td class="num" data-raw="124700">124.70 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">11</td><td class="num" data-raw="89300">89.30 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">12</td><td class="num" data-raw="59100">59.10 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">13</td><td class="num" data-raw="94900">94.90 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+    <tr><td class="num">14</td><td class="num" data-raw="78800">78.80 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+    <tr><td class="num">15</td><td class="num" data-raw="67300">67.30 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">16</td><td class="num" data-raw="63500">63.50 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">17</td><td class="num" data-raw="72000">72.00 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td></tr>
+    <tr><td class="num">18</td><td class="num" data-raw="77200">77.20 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">19</td><td class="num" data-raw="60300">60.30 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">20</td><td class="num" data-raw="82500">82.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+    <tr><td class="num">21</td><td class="num" data-raw="78500">78.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="5600">5.60 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:11</code></td></tr>
+    <tr><td class="num" data-raw="66400">66.40 us</td><td class="num" data-raw="60800">60.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="76500">76.50 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 7</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:14</code></td></tr>
+    <tr><td class="num" data-raw="221900">221.90 us</td><td class="num" data-raw="79000">79.00 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:15</code></td></tr>
+    <tr><td class="num" data-raw="270500">270.50 us</td><td class="num" data-raw="47100">47.10 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:16</code></td></tr>
+    <tr><td class="num" data-raw="301300">301.30 us</td><td class="num" data-raw="30100">30.10 us</td><td>CLOSE</td><td class="num" data-raw="1200">1.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:17</code></td></tr>
+    <tr><td class="num" data-raw="362400">362.40 us</td><td class="num" data-raw="59900">59.90 us</td><td>PREPARE</td><td class="num" data-raw="6100">6.10 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="446100">446.10 us</td><td class="num" data-raw="77600">77.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="44000">44.00 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] max_order_value</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="529000">529.00 us</td><td class="num" data-raw="38900">38.90 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="562900">562.90 us</td><td class="num" data-raw="32400">32.40 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="594400">594.40 us</td><td class="num" data-raw="30800">30.80 us</td><td>CLOSE</td><td class="num" data-raw="1200">1.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="626700">626.70 us</td><td class="num" data-raw="31100">31.10 us</td><td>PREPARE</td><td class="num" data-raw="4900">4.90 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="674800">674.80 us</td><td class="num" data-raw="43200">43.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="99000">99.00 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] default_currency</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="835800">835.80 us</td><td class="num" data-raw="62000">62.00 us</td><td>NEXT</td><td class="num" data-raw="1300">1.30 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="876400">876.40 us</td><td class="num" data-raw="39300">39.30 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="906300">906.30 us</td><td class="num" data-raw="29200">29.20 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="937000">937.00 us</td><td class="num" data-raw="29700">29.70 us</td><td>PREPARE</td><td class="num" data-raw="5500">5.50 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:87</code></td></tr>
+    <tr><td class="num" data-raw="1012000">1.01 ms</td><td class="num" data-raw="69500">69.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="115600">115.60 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><code class="sql">[1] 7, [2] 59.90</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:91</code></td></tr>
+    <tr><td class="num" data-raw="1176300">1.18 ms</td><td class="num" data-raw="48700">48.70 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:92</code></td></tr>
+    <tr><td class="num" data-raw="1216100">1.22 ms</td><td class="num" data-raw="38700">38.70 us</td><td>PREPARE</td><td class="num" data-raw="120900">120.90 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:21</code></td></tr>
+    <tr><td class="num" data-raw="1417200">1.42 ms</td><td class="num" data-raw="80200">80.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="80600">80.60 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 7</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:24</code></td></tr>
+    <tr><td class="num" data-raw="1537300">1.54 ms</td><td class="num" data-raw="39500">39.50 us</td><td>NEXT</td><td class="num" data-raw="1300">1.30 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:25</code></td></tr>
+    <tr><td class="num" data-raw="1577000">1.58 ms</td><td class="num" data-raw="38400">38.40 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:26</code></td></tr>
+    <tr><td class="num" data-raw="1607000">1.61 ms</td><td class="num" data-raw="29300">29.30 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:27</code></td></tr>
+    <tr><td class="num" data-raw="5491700">5.49 ms</td><td class="num" data-raw="3883600">3.88 ms</td><td>PREPARE</td><td class="num" data-raw="107200">107.20 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="5709500">5.71 ms</td><td class="num" data-raw="110600">110.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="526300">526.30 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-started, [2] customer=7 email=customer-7@example.com</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="6316000">6.32 ms</td><td class="num" data-raw="80200">80.20 us</td><td>CLOSE</td><td class="num" data-raw="3200">3.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="10265900">10.27 ms</td><td class="num" data-raw="3946700">3.95 ms</td><td>PREPARE</td><td class="num" data-raw="12800">12.80 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="10381100">10.38 ms</td><td class="num" data-raw="102400">102.40 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="123800">123.80 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-completed, [2] customer=7 email=customer-7@example.com amount=59.90</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="10539800">10.54 ms</td><td class="num" data-raw="34900">34.90 us</td><td>CLOSE</td><td class="num" data-raw="1900">1.90 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr class="inv-divider"><td colspan="7">Invocation 2 of 3 · 29 events · 886.30 us DB time</td></tr>
+    <tr><td class="num" data-raw="10583500">10.58 ms</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="6000">6.00 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:11</code></td></tr>
+    <tr><td class="num" data-raw="10642500">10.64 ms</td><td class="num" data-raw="53000">53.00 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="120400">120.40 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 12</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:14</code></td></tr>
+    <tr><td class="num" data-raw="10795700">10.80 ms</td><td class="num" data-raw="32800">32.80 us</td><td>NEXT</td><td class="num" data-raw="2200">2.20 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:15</code></td></tr>
+    <tr><td class="num" data-raw="10827600">10.83 ms</td><td class="num" data-raw="29700">29.70 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:16</code></td></tr>
+    <tr><td class="num" data-raw="10853600">10.85 ms</td><td class="num" data-raw="25000">25.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:17</code></td></tr>
+    <tr><td class="num" data-raw="10886400">10.89 ms</td><td class="num" data-raw="31700">31.70 us</td><td>PREPARE</td><td class="num" data-raw="5800">5.80 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="10937200">10.94 ms</td><td class="num" data-raw="45000">45.00 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="263000">263.00 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] max_order_value</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="11243000">11.24 ms</td><td class="num" data-raw="42800">42.80 us</td><td>NEXT</td><td class="num" data-raw="1500">1.50 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="11274600">11.27 ms</td><td class="num" data-raw="30100">30.10 us</td><td>CLOSE</td><td class="num" data-raw="800">800 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="11300900">11.30 ms</td><td class="num" data-raw="25500">25.50 us</td><td>CLOSE</td><td class="num" data-raw="1300">1.30 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="11327300">11.33 ms</td><td class="num" data-raw="25100">25.10 us</td><td>PREPARE</td><td class="num" data-raw="5800">5.80 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="11378000">11.38 ms</td><td class="num" data-raw="44900">44.90 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="124700">124.70 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] default_currency</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="11540300">11.54 ms</td><td class="num" data-raw="37600">37.60 us</td><td>NEXT</td><td class="num" data-raw="1300">1.30 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="11569900">11.57 ms</td><td class="num" data-raw="28300">28.30 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="11595900">11.60 ms</td><td class="num" data-raw="25300">25.30 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="11629200">11.63 ms</td><td class="num" data-raw="32200">32.20 us</td><td>PREPARE</td><td class="num" data-raw="5900">5.90 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:87</code></td></tr>
+    <tr><td class="num" data-raw="11684100">11.68 ms</td><td class="num" data-raw="49000">49.00 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="89300">89.30 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><code class="sql">[1] 12, [2] 149.00</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:91</code></td></tr>
+    <tr><td class="num" data-raw="11803400">11.80 ms</td><td class="num" data-raw="30000">30.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:92</code></td></tr>
+    <tr><td class="num" data-raw="11830800">11.83 ms</td><td class="num" data-raw="26300">26.30 us</td><td>PREPARE</td><td class="num" data-raw="5300">5.30 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:21</code></td></tr>
+    <tr><td class="num" data-raw="11883800">11.88 ms</td><td class="num" data-raw="47700">47.70 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="59100">59.10 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 12</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:24</code></td></tr>
+    <tr><td class="num" data-raw="11974500">11.97 ms</td><td class="num" data-raw="31600">31.60 us</td><td>NEXT</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:25</code></td></tr>
+    <tr><td class="num" data-raw="12004900">12.00 ms</td><td class="num" data-raw="29300">29.30 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:26</code></td></tr>
+    <tr><td class="num" data-raw="12033800">12.03 ms</td><td class="num" data-raw="28200">28.20 us</td><td>CLOSE</td><td class="num" data-raw="1200">1.20 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:27</code></td></tr>
+    <tr><td class="num" data-raw="12070200">12.07 ms</td><td class="num" data-raw="35200">35.20 us</td><td>PREPARE</td><td class="num" data-raw="5300">5.30 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="12167000">12.17 ms</td><td class="num" data-raw="91500">91.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="94900">94.90 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-started, [2] customer=12 email=customer-12@example.com</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="12294100">12.29 ms</td><td class="num" data-raw="32200">32.20 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="12328600">12.33 ms</td><td class="num" data-raw="33500">33.50 us</td><td>PREPARE</td><td class="num" data-raw="4900">4.90 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="12373400">12.37 ms</td><td class="num" data-raw="39900">39.90 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="78800">78.80 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-completed, [2] customer=12 email=customer-12@example.com amount=149.00</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="12483800">12.48 ms</td><td class="num" data-raw="31600">31.60 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr class="inv-divider"><td colspan="7">Invocation 3 of 3 · 29 events · 553.60 us DB time</td></tr>
+    <tr><td class="num" data-raw="12523300">12.52 ms</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="6000">6.00 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:11</code></td></tr>
+    <tr><td class="num" data-raw="12575900">12.58 ms</td><td class="num" data-raw="46600">46.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="67300">67.30 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 23</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:14</code></td></tr>
+    <tr><td class="num" data-raw="12673200">12.67 ms</td><td class="num" data-raw="30000">30.00 us</td><td>NEXT</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:15</code></td></tr>
+    <tr><td class="num" data-raw="12701900">12.70 ms</td><td class="num" data-raw="27600">27.60 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT name FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:16</code></td></tr>
+    <tr><td class="num" data-raw="12734900">12.73 ms</td><td class="num" data-raw="32300">32.30 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findById:17</code></td></tr>
+    <tr><td class="num" data-raw="12761200">12.76 ms</td><td class="num" data-raw="25200">25.20 us</td><td>PREPARE</td><td class="num" data-raw="5200">5.20 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="12811400">12.81 ms</td><td class="num" data-raw="45000">45.00 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="63500">63.50 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] max_order_value</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="12904400">12.90 ms</td><td class="num" data-raw="29500">29.50 us</td><td>NEXT</td><td class="num" data-raw="1200">1.20 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="12942100">12.94 ms</td><td class="num" data-raw="36500">36.50 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="12968800">12.97 ms</td><td class="num" data-raw="26000">26.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="13027100">13.03 ms</td><td class="num" data-raw="57200">57.20 us</td><td>PREPARE</td><td class="num" data-raw="5200">5.20 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:11</code></td></tr>
+    <tr><td class="num" data-raw="13073000">13.07 ms</td><td class="num" data-raw="40700">40.70 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="72000">72.00 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><code class="sql">[1] default_currency</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:14</code></td></tr>
+    <tr><td class="num" data-raw="13173700">13.17 ms</td><td class="num" data-raw="28700">28.70 us</td><td>NEXT</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:15</code></td></tr>
+    <tr><td class="num" data-raw="13201100">13.20 ms</td><td class="num" data-raw="26300">26.30 us</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><code class="sql">SELECT v FROM settings WHERE k = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:16</code></td></tr>
+    <tr><td class="num" data-raw="13233700">13.23 ms</td><td class="num" data-raw="32000">32.00 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.SettingsDao.getByKey:17</code></td></tr>
+    <tr><td class="num" data-raw="13258700">13.26 ms</td><td class="num" data-raw="23900">23.90 us</td><td>PREPARE</td><td class="num" data-raw="5200">5.20 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:87</code></td></tr>
+    <tr><td class="num" data-raw="13305500">13.31 ms</td><td class="num" data-raw="41600">41.60 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="77200">77.20 us</td><td><code class="sql">INSERT INTO orders (customer_id, amount) VALUES (?, ?)</code></td><td><code class="sql">[1] 23, [2] 39.95</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:91</code></td></tr>
+    <tr><td class="num" data-raw="13410500">13.41 ms</td><td class="num" data-raw="27800">27.80 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.OrderDao.insert:92</code></td></tr>
+    <tr><td class="num" data-raw="13436000">13.44 ms</td><td class="num" data-raw="24500">24.50 us</td><td>PREPARE</td><td class="num" data-raw="5100">5.10 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:21</code></td></tr>
+    <tr><td class="num" data-raw="13483400">13.48 ms</td><td class="num" data-raw="42300">42.30 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="60300">60.30 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 23</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:24</code></td></tr>
+    <tr><td class="num" data-raw="13575800">13.58 ms</td><td class="num" data-raw="32100">32.10 us</td><td>NEXT</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:25</code></td></tr>
+    <tr><td class="num" data-raw="13605200">13.61 ms</td><td class="num" data-raw="28300">28.30 us</td><td>CLOSE</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT email FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:26</code></td></tr>
+    <tr><td class="num" data-raw="13631700">13.63 ms</td><td class="num" data-raw="25800">25.80 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.findEmailById:27</code></td></tr>
+    <tr><td class="num" data-raw="13670400">13.67 ms</td><td class="num" data-raw="37600">37.60 us</td><td>PREPARE</td><td class="num" data-raw="5200">5.20 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="13716700">13.72 ms</td><td class="num" data-raw="41100">41.10 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="82500">82.50 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-started, [2] customer=23 email=customer-23@example.com</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="13833000">13.83 ms</td><td class="num" data-raw="33800">33.80 us</td><td>CLOSE</td><td class="num" data-raw="1000">1.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+    <tr><td class="num" data-raw="13866300">13.87 ms</td><td class="num" data-raw="32300">32.30 us</td><td>PREPARE</td><td class="num" data-raw="5700">5.70 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:10</code></td></tr>
+    <tr><td class="num" data-raw="13931000">13.93 ms</td><td class="num" data-raw="59000">59.00 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="78500">78.50 us</td><td><code class="sql">INSERT INTO audit (kind, payload, ts) VALUES (?, ?, CURRENT_TIMESTAMP)</code></td><td><code class="sql">[1] checkout-completed, [2] customer=23 email=customer-23@example.com amount=39.95</code></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:14</code></td></tr>
+    <tr><td class="num" data-raw="14041900">14.04 ms</td><td class="num" data-raw="32400">32.40 us</td><td>CLOSE</td><td class="num" data-raw="1100">1.10 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.AuditDao.log:15</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

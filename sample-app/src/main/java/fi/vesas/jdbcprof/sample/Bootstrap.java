@@ -43,6 +43,32 @@ final class Bootstrap {
             s.execute("CREATE TABLE audit ("
                     + "id INT AUTO_INCREMENT PRIMARY KEY, "
                     + "kind VARCHAR(50), payload VARCHAR(500), ts TIMESTAMP)");
+            // Enterprise tables: transactional outbox, per-customer
+            // balance rollup, reconciliation exception log. Together
+            // with BalanceDao / OutboxDao / ExceptionDao they wire the
+            // sample into two enterprise shapes most real Java
+            // back-offices have: outbox dispatch and nightly
+            // reconciliation.
+            s.execute("CREATE TABLE outbox_events ("
+                    + "id INT AUTO_INCREMENT PRIMARY KEY, "
+                    + "kind VARCHAR(50), payload VARCHAR(500), "
+                    + "status VARCHAR(20) DEFAULT 'PENDING', "
+                    + "attempts INT DEFAULT 0, "
+                    + "last_error VARCHAR(200), "
+                    + "created_at TIMESTAMP, processed_at TIMESTAMP)");
+            s.execute("CREATE TABLE customer_balances ("
+                    + "customer_id INT PRIMARY KEY, "
+                    + "orders_count INT, "
+                    + "lifetime_spend DECIMAL(14,2), "
+                    + "last_order_at TIMESTAMP, "
+                    + "updated_at TIMESTAMP)");
+            s.execute("CREATE TABLE reconciliation_exceptions ("
+                    + "id INT AUTO_INCREMENT PRIMARY KEY, "
+                    + "customer_id INT, "
+                    + "expected DECIMAL(14,2), "
+                    + "actual DECIMAL(14,2), "
+                    + "reason VARCHAR(200), "
+                    + "detected_at TIMESTAMP)");
         }
     }
 }

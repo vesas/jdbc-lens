@@ -1,5 +1,9 @@
 package fi.vesas.jdbcprof.analysis;
 
+import fi.vesas.jdbcprof.analysis.source.JavaSourceScanner;
+import fi.vesas.jdbcprof.analysis.source.SourceRootInference;
+import fi.vesas.jdbcprof.analysis.source.SourceScanResult;
+import fi.vesas.jdbcprof.analysis.source.SourceSqlSite;
 import fi.vesas.jdbcprof.capture.Event;
 import fi.vesas.jdbcprof.capture.EventType;
 import fi.vesas.jdbcprof.capture.ParameterValues;
@@ -35,20 +39,52 @@ public final class HtmlReport {
     }
 
     public static void write(Path input, Path output) throws IOException {
+        write(input, output, List.of(), false);
+    }
+
+    public static void write(Path input, Path output,
+                              List<Path> sourceRootOverrides,
+                              boolean noSourceScan) throws IOException {
         Model m = Model.load(input);
+        SourceScanResult scan = resolveSourceScan(m, sourceRootOverrides, noSourceScan);
         try (OutputStream os = Files.newOutputStream(output);
              PrintStream out = new PrintStream(os, false, StandardCharsets.UTF_8)) {
-            renderAll(out, input, m);
+            renderAll(out, input, m, scan);
         }
         writeDrillDownPages(output, m);
     }
 
     public static void write(Path input, PrintStream out) throws IOException {
         Model m = Model.load(input);
-        renderAll(out, input, m);
+        renderAll(out, input, m, SourceScanResult.empty());
     }
 
-    private static void renderAll(PrintStream out, Path input, Model m) {
+    /**
+     * Resolve source-root candidates in order:
+     * <ol>
+     *   <li>explicit {@code --source-root} overrides from the CLI,</li>
+     *   <li>roots inferred from the recording's captured classpath,</li>
+     *   <li>empty (report renders runtime-only with a footer hint).</li>
+     * </ol>
+     */
+    private static SourceScanResult resolveSourceScan(Model m,
+                                                       List<Path> overrides,
+                                                       boolean noScan) {
+        if (noScan) {
+            return SourceScanResult.empty();
+        }
+        List<Path> roots = overrides;
+        if (roots == null || roots.isEmpty()) {
+            roots = SourceRootInference.infer(m.userDir, m.javaClassPath);
+        }
+        if (roots.isEmpty()) {
+            return SourceScanResult.empty();
+        }
+        List<SourceSqlSite> sites = JavaSourceScanner.scan(roots);
+        return SourceScanResult.of(sites);
+    }
+
+    private static void renderAll(PrintStream out, Path input, Model m, SourceScanResult scan) {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
                 .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
@@ -63,6 +99,8 @@ public final class HtmlReport {
                 WriteAmplificationDetector.detect(entityInputs);
         List<IdleLockFinding> idleLocks = new IdleLockDetector()
                 .detect(m.eventsByOp, m.ops, m.sqls, m.stacks, NO_OPERATION);
+        List<TableAccessFinding> tableAccess =
+                TableAccessAudit.detect(m.sqls, m.eventsByOp, m.stacks);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
@@ -77,6 +115,8 @@ public final class HtmlReport {
                 () -> renderWriteAmplification(out, writeAmp, m));
         section(out, "Transactions holding locks during non-DB work",
                 () -> renderIdleLocks(out, idleLocks));
+        section(out, "Cache candidates (per-table access)",
+                () -> renderTableAccess(out, tableAccess, scan));
         section(out, "Operations", () -> renderOperations(out, m));
         section(out, "Flamegraph", () -> renderFlameGraph(out, flame));
         section(out, "(Call-site, template) pairs", () -> renderPairsTable(out, m));
@@ -351,6 +391,156 @@ public final class HtmlReport {
             out.println("  </div>");
         }
         out.println("</div>");
+    }
+
+    private static void renderTableAccess(PrintStream out,
+                                          List<TableAccessFinding> findings,
+                                          SourceScanResult scan) {
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No table activity was recorded.</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">Every table touched in this "
+                + "recording with its readers and writers. Tables labelled "
+                + "<strong>read-only</strong> had no writes during capture \u2014 "
+                + "that makes them the cleanest cache candidates, but the "
+                + "label is only ever a lower bound on safety (writes outside "
+                + "the recording window stay invisible). For read/write tables, "
+                + "the writer call-site count is the number of places that "
+                + "need invalidation (or write-through) hooks."
+                + (scan.isEmpty()
+                    ? " <em>Static source scan is off \u2014 pass "
+                        + "<code>--source-root &lt;path&gt;</code> (or record "
+                        + "with a profiler that embeds the classpath) to have "
+                        + "the report cross-check against every SQL literal in "
+                        + "the source tree.</em>"
+                    : " <em>Source-scan is enabled: each row also shows "
+                        + "<strong>static readers/writers</strong> seen in "
+                        + ".java files. A <span class=\"wa-tag wa-redundant\">"
+                        + "UNEXERCISED WRITES</span> badge means the source has "
+                        + "writer sites that didn't run during this recording "
+                        + "\u2014 the real answer to 'is it safe to cache?'.</em>")
+                + "</p>");
+        out.println("<div class=\"findings\">");
+        for (TableAccessFinding f : findings) {
+            SourceScanResult.TableSites staticSites = scan.forTable(f.table());
+            boolean unexercisedWrites =
+                    f.writeEvents() == 0L && !staticSites.writers().isEmpty();
+
+            out.println("  <div class=\"finding\">");
+            String badge;
+            if (unexercisedWrites) {
+                badge = "<span class=\"wa-tag wa-redundant\">unexercised writes</span>";
+            } else if (f.readOnly()) {
+                badge = "<span class=\"wa-tag wa-mergeable\">read-only in recording</span>";
+            } else {
+                badge = "<span class=\"wa-tag wa-overlap\">" + f.writeEvents() + " writes</span>";
+            }
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\"><code class=\"site\">"
+                    + htmlEscape(f.table()) + "</code></span> "
+                    + "<span class=\"finding-time\">"
+                    + f.readEvents() + " reads \u00B7 " + badge
+                    + " \u00B7 " + f.distinctReaderCallSites() + " reader sites \u00B7 "
+                    + f.distinctWriterCallSites() + " writer sites \u00B7 "
+                    + f.opsWithReads() + " ops"
+                    + (scan.isEmpty() ? ""
+                        : " \u00B7 static: " + staticSites.readers().size() + " readers / "
+                            + staticSites.writers().size() + " writers")
+                    + "</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            if (!f.readers().isEmpty()) {
+                out.println("      <dt>readers</dt><dd>");
+                for (TableAccessFinding.ReaderHit h : f.readers()) {
+                    out.println("        <div><code class=\"sql\">"
+                            + htmlEscape(h.sql() == null ? "sql[" + h.sqlId() + "]" : h.sql())
+                            + "</code> <span class=\"muted\">\u2014 "
+                            + htmlEscape(formatFrame(h.callSite()))
+                            + " \u00B7 " + h.eventCount() + "\u00D7</span></div>");
+                }
+                out.println("      </dd>");
+            }
+            if (!f.writers().isEmpty()) {
+                out.println("      <dt>writers</dt><dd>");
+                for (TableAccessFinding.WriterHit h : f.writers()) {
+                    String setInfo = h.setColumns().isEmpty() ? ""
+                            : " \u00B7 SET " + htmlEscape(String.join(", ", h.setColumns()));
+                    out.println("        <div><span class=\"wa-tag wa-overlap\">"
+                            + htmlEscape(h.kind()) + "</span> <code class=\"sql\">"
+                            + htmlEscape(h.sql() == null ? "sql[" + h.sqlId() + "]" : h.sql())
+                            + "</code> <span class=\"muted\">\u2014 "
+                            + htmlEscape(formatFrame(h.callSite()))
+                            + " \u00B7 " + h.eventCount() + "\u00D7"
+                            + setInfo + "</span></div>");
+                }
+                out.println("      </dd>");
+            } else {
+                out.println("      <dt>writers</dt><dd class=\"muted\">"
+                        + "none observed \u2014 trivial cache candidate, subject "
+                        + "to recording coverage.</dd>");
+            }
+            if (!staticSites.isEmpty()) {
+                renderStaticSites(out, staticSites);
+            }
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + cacheSuggestion(f, staticSites, unexercisedWrites) + "</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static void renderStaticSites(PrintStream out, SourceScanResult.TableSites s) {
+        if (!s.readers().isEmpty()) {
+            out.println("      <dt>static readers</dt><dd>");
+            for (SourceScanResult.SiteRef ref : s.readers()) {
+                out.println("        <div><span class=\"muted\">"
+                        + htmlEscape(ref.file() + ":" + ref.line())
+                        + "</span> <code class=\"sql\">" + htmlEscape(ref.snippet())
+                        + "</code></div>");
+            }
+            out.println("      </dd>");
+        }
+        if (!s.writers().isEmpty()) {
+            out.println("      <dt>static writers</dt><dd>");
+            for (SourceScanResult.SiteRef ref : s.writers()) {
+                out.println("        <div><span class=\"wa-tag wa-overlap\">"
+                        + htmlEscape(ref.kind()) + "</span> "
+                        + "<span class=\"muted\">"
+                        + htmlEscape(ref.file() + ":" + ref.line())
+                        + "</span> <code class=\"sql\">" + htmlEscape(ref.snippet())
+                        + "</code></div>");
+            }
+            out.println("      </dd>");
+        }
+    }
+
+    private static String cacheSuggestion(TableAccessFinding f,
+                                           SourceScanResult.TableSites staticSites,
+                                           boolean unexercisedWrites) {
+        if (unexercisedWrites) {
+            return "DANGER: runtime saw no writes, but source has "
+                    + staticSites.writers().size() + " writer site(s) that "
+                    + "simply weren't exercised in this recording. Treat "
+                    + "<em>every</em> static writer as a required invalidation "
+                    + "hook before caching \u2014 the read-only label would be "
+                    + "a lie in production.";
+        }
+        if (f.readOnly()) {
+            return "No writes observed \u2014 safe to cache for the duration "
+                    + "of this workload. Verify against a longer recording before "
+                    + "treating the table as immutable in production.";
+        }
+        if (f.writeEvents() * 4 < f.readEvents()
+                && f.distinctWriterCallSites() <= 3) {
+            return "Read/write ratio favours a cache. Writes come from "
+                    + f.distinctWriterCallSites() + " call-site(s) \u2014 wire "
+                    + "invalidation (or a write-through wrapper) at each, keyed "
+                    + "by the columns shown in writer SET clauses.";
+        }
+        return "Writes are frequent or scattered across many call-sites. "
+                + "Caching this table is only worthwhile with a single "
+                + "write gateway; otherwise stale reads are likely.";
     }
 
     private static void renderWriteAmplification(PrintStream out,
@@ -768,6 +958,12 @@ public final class HtmlReport {
         // the Operations section — separate invocations of the same
         // op name share an `operationId` but get distinct entries here.
         Map<Long, InvStats> invStats = new HashMap<>();
+        // Environment snapshot from the one-shot REC_RECORDING_META
+        // record. Empty strings when the recording predates the record
+        // type; SourceRootInference treats them as "no info."
+        String userDir = "";
+        String javaClassPath = "";
+        String javaCommand = "";
 
         static Model load(Path input) throws IOException {
             Model m = new Model();
@@ -800,6 +996,13 @@ public final class HtmlReport {
                     for (int i = 0; i < entries.size(); i++) {
                         m.paramValuesById.put(firstId + i, entries.get(i));
                     }
+                }
+
+                @Override
+                public void onRecordingMeta(String userDir, String classpath, String command) {
+                    m.userDir = userDir == null ? "" : userDir;
+                    m.javaClassPath = classpath == null ? "" : classpath;
+                    m.javaCommand = command == null ? "" : command;
                 }
 
                 @Override
