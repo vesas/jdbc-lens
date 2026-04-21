@@ -17,8 +17,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -86,6 +88,8 @@ public final class HtmlReport {
 
     private static void renderAll(PrintStream out, Path input, Model m, SourceScanResult scan) {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
+        List<EmulatedCursorFinding> emulatedCursors = new EmulatedCursorDetector()
+                .detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
                 .detect(m.redundant, m.sqls, m.ops, m.stacks, NO_OPERATION);
         EntityAccessAudit.Inputs entityInputs = new EntityAccessAudit.Inputs(
@@ -99,12 +103,24 @@ public final class HtmlReport {
                 WriteAmplificationDetector.detect(entityInputs);
         List<IdleLockFinding> idleLocks = new IdleLockDetector()
                 .detect(m.eventsByOp, m.ops, m.sqls, m.stacks, NO_OPERATION);
+        Map<Long, List<Transaction>> txByOp = new LinkedHashMap<>();
+        for (Map.Entry<Long, List<Event>> e : m.eventsByOp.entrySet()) {
+            long opId = e.getKey();
+            if (opId == NO_OPERATION) {
+                continue;
+            }
+            txByOp.put(opId, Transactions.reconstruct(opId, e.getValue()));
+        }
+        List<CommitPerRecordFinding> commitPerRecord = new CommitPerRecordDetector()
+                .detect(txByOp, m.ops, m.sqls, m.stacks);
         List<TableAccessFinding> tableAccess =
                 TableAccessAudit.detect(m.sqls, m.eventsByOp, m.stacks);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
         renderHead(out, input);
         renderSummary(out, m);
         section(out, "N+1 findings", () -> renderFindings(out, findings));
+        section(out, "Emulated cursors (COBOL READ NEXT)",
+                () -> renderEmulatedCursors(out, emulatedCursors));
         section(out, "Redundant queries", () -> renderRedundant(out, redundant, m));
         section(out, "Entity access audit", () -> renderEntityAccess(out, entities, m));
         section(out, "Read-then-write on the same row",
@@ -115,6 +131,8 @@ public final class HtmlReport {
                 () -> renderWriteAmplification(out, writeAmp, m));
         section(out, "Transactions holding locks during non-DB work",
                 () -> renderIdleLocks(out, idleLocks));
+        section(out, "Transactions",
+                () -> renderTransactions(out, txByOp, commitPerRecord, m));
         section(out, "Cache candidates (per-table access)",
                 () -> renderTableAccess(out, tableAccess, scan));
         section(out, "Operations", () -> renderOperations(out, m));
@@ -358,6 +376,89 @@ public final class HtmlReport {
             out.println("  </div>");
         }
         out.println("</div>");
+    }
+
+    private static void renderEmulatedCursors(PrintStream out,
+                                               List<EmulatedCursorFinding> findings) {
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No emulated-cursor pairs "
+                    + "(a <code>SELECT MIN(key) … WHERE key &gt; ?</code> walk "
+                    + "paired with a <code>SELECT … WHERE key = ?</code> fetch "
+                    + "from the same outer method) were observed above the default "
+                    + "threshold of " + EmulatedCursorDetector.DEFAULT_MIN_WALKS + " walks.</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">A pair of templates whose shape is "
+                + "the SQL fingerprint of a COBOL <code>READ NEXT</code> loop the "
+                + "transpiler couldn't recover: one query walks a key column with "
+                + "<code>MIN</code> / <code>MAX</code> and a strict inequality, the "
+                + "other fetches row fields by that same key. Both queries live under "
+                + "the same outer method. The fix is not the usual N+1 batch-or-join "
+                + "— it's to replace the <em>pair</em> with one scrolling "
+                + "<code>ResultSet</code>, or one set-oriented "
+                + "<code>GROUP BY</code>. Nested pairs (a "
+                + "<code>PERFORM UNTIL</code> inside a "
+                + "<code>PERFORM UNTIL</code>) are flagged — those are almost "
+                + "always replaceable with a single <code>JOIN … GROUP BY</code>.</p>");
+        out.println("<div class=\"findings\">");
+        for (EmulatedCursorFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            String nestedBadge = f.nested()
+                    ? " <span class=\"wa-tag wa-redundant\">nested</span>"
+                    : "";
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">"
+                    + f.walkCount() + " walks × " + f.fetchCount() + " fetches</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(f.totalDurationNanos()))
+                    + " total DB time" + nestedBadge
+                    + "</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>walked table</dt><dd><code class=\"site\">"
+                    + htmlEscape(f.table() + "." + f.keyColumn())
+                    + "</code></dd>");
+            out.println("      <dt>walk</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.walkSql() == null ? "sql[" + f.walkSqlId() + "]" : f.walkSql())
+                    + "</code> <span class=\"muted\">— "
+                    + htmlEscape(formatFrame(f.walkSite()))
+                    + "</span></dd>");
+            out.println("      <dt>fetch</dt><dd><code class=\"sql\">"
+                    + htmlEscape(f.fetchSql() == null ? "sql[" + f.fetchSqlId() + "]" : f.fetchSql())
+                    + "</code> <span class=\"muted\">— "
+                    + htmlEscape(formatFrame(f.fetchSite()))
+                    + "</span></dd>");
+            out.println("      <dt>outer method</dt><dd>"
+                    + htmlEscape(formatFrame(f.ancestor()))
+                    + "</dd>");
+            if (f.nested()) {
+                out.println("      <dt>nested in</dt><dd>"
+                        + htmlEscape(formatFrame(f.outerAncestor()))
+                        + " <span class=\"muted\">— another emulated cursor "
+                        + "is already walking above this one</span></dd>");
+            }
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + emulatedCursorSuggestion(f) + "</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
+    private static String emulatedCursorSuggestion(EmulatedCursorFinding f) {
+        if (f.nested()) {
+            return "Two emulated cursors nested inside each other. Almost always a "
+                    + "transpiled master/detail loop that a single "
+                    + "<code>SELECT … FROM " + htmlEscape(f.table())
+                    + " JOIN … GROUP BY</code> would replace — the "
+                    + "transpiler couldn't recover set semantics from paragraph-by-"
+                    + "paragraph source, but the analyzer can see them here.";
+        }
+        return "Replace the walk + fetch pair with one scrolling "
+                + "<code>ResultSet</code> (<code>SELECT … FROM "
+                + htmlEscape(f.table())
+                + " ORDER BY " + htmlEscape(f.keyColumn())
+                + "</code>) and iterate it via <code>ResultSet.next()</code>. "
+                + "Each iteration then costs one row, not two round-trips.";
     }
 
     private static void renderOverWideUpdate(PrintStream out,
@@ -737,6 +838,205 @@ public final class HtmlReport {
         sb.append("<span class=\"tx-legend-item\"><i class=\"tx-seg tx-commit\"></i> commit</span>");
         sb.append("</div>");
         return sb.toString();
+    }
+
+    private static void renderTransactions(PrintStream out,
+                                           Map<Long, List<Transaction>> txByOp,
+                                           List<CommitPerRecordFinding> commitPerRecord,
+                                           Model m) {
+        List<Transaction> all = new ArrayList<>();
+        for (List<Transaction> list : txByOp.values()) {
+            all.addAll(list);
+        }
+        if (all.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No explicit transactions were "
+                    + "observed. Every JDBC thread in this recording stayed in "
+                    + "autocommit mode, so each statement is its own transaction. "
+                    + "If that's unexpected, check that the app actually calls "
+                    + "<code>setAutoCommit(false)</code> before doing multi-statement "
+                    + "work.</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">Every explicit transaction reconstructed "
+                + "from <code>COMMIT</code> / <code>ROLLBACK</code> boundaries. The "
+                + "overview shows the overall transaction shape of the workload; the "
+                + "finding cards below flag runs of many short back-to-back transactions "
+                + "that suggest an over-narrow TX boundary (commit-per-record).</p>");
+
+        renderTransactionOverview(out, all);
+
+        if (commitPerRecord.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No commit-per-record runs detected. "
+                    + "Runs must contain at least "
+                    + CommitPerRecordDetector.DEFAULT_MIN_RUN_LENGTH
+                    + " consecutive short TXs sharing an outer call-site.</p>");
+        } else {
+            out.println("<h3>Commit-per-record runs</h3>");
+            out.println("<p class=\"findings-empty\">Each card below is a run of many "
+                    + "short explicit transactions fired back-to-back from the same "
+                    + "outer method. Each TX did only a handful of statements and "
+                    + "committed — the signature of a loop that commits every "
+                    + "iteration (transpiled COBOL <code>EXEC SQL COMMIT</code>, or a "
+                    + "per-object ORM save inside a <code>for</code>). Cards are "
+                    + "ranked by total wall time the pattern consumed.</p>");
+            out.println("<div class=\"findings\">");
+            for (CommitPerRecordFinding f : commitPerRecord) {
+                renderCommitPerRecordCard(out, f);
+            }
+            out.println("</div>");
+        }
+
+        renderTopTransactionsTable(out, all, m);
+    }
+
+    private static void renderTransactionOverview(PrintStream out, List<Transaction> all) {
+        int total = all.size();
+        int committed = 0;
+        int rolledBack = 0;
+        int open = 0;
+        long totalDbTime = 0L;
+        long totalWall = 0L;
+        int writes = 0;
+        int reads = 0;
+        long[] walls = new long[total];
+        for (int i = 0; i < total; i++) {
+            Transaction tx = all.get(i);
+            if (tx.committed()) committed++;
+            else if (tx.rolledBack()) rolledBack++;
+            else open++;
+            totalDbTime += tx.dbTimeNanos();
+            long w = tx.wallClockNanos();
+            totalWall += w;
+            walls[i] = w;
+            writes += tx.writeCount();
+            reads += tx.readCount();
+        }
+        long median = percentile(walls, 0.50);
+        long p99 = percentile(walls, 0.99);
+
+        out.println("<div class=\"tx-overview\">");
+        out.println("  <dl class=\"finding-kv\">");
+        out.println("    <dt>explicit transactions</dt><dd>" + total + "</dd>");
+        out.println("    <dt>committed / rolled back / open</dt><dd>"
+                + committed + " / " + rolledBack + " / " + open + "</dd>");
+        out.println("    <dt>median wall-clock</dt><dd>"
+                + htmlEscape(formatDuration(median)) + "</dd>");
+        out.println("    <dt>p99 wall-clock</dt><dd>"
+                + htmlEscape(formatDuration(p99)) + "</dd>");
+        out.println("    <dt>total wall time inside TXs</dt><dd>"
+                + htmlEscape(formatDuration(totalWall)) + "</dd>");
+        out.println("    <dt>total DB time inside TXs</dt><dd>"
+                + htmlEscape(formatDuration(totalDbTime)) + "</dd>");
+        out.println("    <dt>writes / reads inside TXs</dt><dd>"
+                + writes + " / " + reads + "</dd>");
+        out.println("  </dl>");
+        out.println("</div>");
+    }
+
+    private static long percentile(long[] sortedCandidate, double fraction) {
+        if (sortedCandidate.length == 0) return 0L;
+        long[] copy = sortedCandidate.clone();
+        java.util.Arrays.sort(copy);
+        int idx = (int) Math.min(copy.length - 1, Math.max(0, Math.round(fraction * (copy.length - 1))));
+        return copy[idx];
+    }
+
+    private static void renderCommitPerRecordCard(PrintStream out,
+                                                  CommitPerRecordFinding f) {
+        out.println("  <div class=\"finding\">");
+        out.println("    <div class=\"finding-head\">"
+                + "<span class=\"finding-count\">" + f.runLength() + "×</span> "
+                + "<span class=\"finding-time\">"
+                + htmlEscape(formatDuration(f.totalWallNanos()))
+                + " total wall · "
+                + htmlEscape(formatDuration(f.avgTxnWallNanos()))
+                + " avg per TX</span></div>");
+        out.println("    <dl class=\"finding-kv\">");
+        out.println("      <dt>inside operation</dt><dd>"
+                + htmlEscape(f.opName() == null ? "op[" + f.opId() + "]" : f.opName())
+                + "</dd>");
+        out.println("      <dt>loop body here</dt><dd>"
+                + htmlEscape(formatFrame(f.representativeCallSite())) + "</dd>");
+        out.println("      <dt>outer loop (probable fix)</dt><dd>"
+                + (f.commonAncestor() == null
+                    ? "<span class=\"muted\">same as query site</span>"
+                    : htmlEscape(formatFrame(f.commonAncestor())))
+                + "</dd>");
+        out.println("      <dt>per-TX shape</dt><dd>"
+                + f.writesPerTxn() + " writes · "
+                + f.readsPerTxn() + " reads</dd>");
+        if (!f.sampleSqls().isEmpty()) {
+            out.println("      <dt>statements in one iteration</dt><dd>");
+            for (String s : f.sampleSqls()) {
+                out.println("        <div><code class=\"sql\">"
+                        + htmlEscape(s) + "</code></div>");
+            }
+            out.println("      </dd>");
+        }
+        out.println("      <dt>total DB time in run</dt><dd>"
+                + htmlEscape(formatDuration(f.totalDbTimeNanos())) + "</dd>");
+        out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                + "Widen the transaction boundary so a batch of records shares one "
+                + "<code>commit()</code>. Each commit costs a WAL flush and a "
+                + "client round-trip; amortising that across 50–500 records "
+                + "typically reclaims most of the run's wall time. If atomicity is "
+                + "per-record by design, consider whether the <em>commit</em> is "
+                + "what's needed or whether a savepoint + single outer commit would "
+                + "suffice."
+                + "</dd>");
+        out.println("    </dl>");
+        out.println("  </div>");
+    }
+
+    private static void renderTopTransactionsTable(PrintStream out,
+                                                   List<Transaction> all,
+                                                   Model m) {
+        if (all.isEmpty()) {
+            return;
+        }
+        List<Transaction> top = new ArrayList<>(all);
+        top.sort(Comparator.comparingLong(Transaction::wallClockNanos).reversed());
+        int cap = Math.min(20, top.size());
+        top = top.subList(0, cap);
+
+        out.println("<h3>Longest transactions</h3>");
+        out.println("<p class=\"findings-empty\">Top " + cap
+                + " explicit transactions by wall-clock duration. Useful for "
+                + "eyeballing outliers the detector did not otherwise flag.</p>");
+        out.println("<table>");
+        out.println("  <thead><tr>");
+        out.println("    <th>operation</th>");
+        out.println("    <th>thread</th>");
+        out.println("    <th>wall</th>");
+        out.println("    <th>DB</th>");
+        out.println("    <th>writes</th>");
+        out.println("    <th>reads</th>");
+        out.println("    <th>outcome</th>");
+        out.println("    <th>opening call-site</th>");
+        out.println("  </tr></thead>");
+        out.println("  <tbody>");
+        for (Transaction tx : top) {
+            String opName = m.ops.get(tx.opId());
+            if (opName == null) opName = "op[" + tx.opId() + "]";
+            StackFrameSnapshot[] frames = m.stacks.get(tx.firstStackId());
+            StackFrameSnapshot site = Attribution.callSite(frames);
+            String outcome = tx.committed() ? "commit"
+                    : tx.rolledBack() ? "rollback" : "open";
+            out.println("    <tr>");
+            out.println("      <td>" + htmlEscape(opName) + "</td>");
+            out.println("      <td>" + tx.threadId() + "</td>");
+            out.println("      <td data-raw=\"" + tx.wallClockNanos() + "\">"
+                    + htmlEscape(formatDuration(tx.wallClockNanos())) + "</td>");
+            out.println("      <td data-raw=\"" + tx.dbTimeNanos() + "\">"
+                    + htmlEscape(formatDuration(tx.dbTimeNanos())) + "</td>");
+            out.println("      <td>" + tx.writeCount() + "</td>");
+            out.println("      <td>" + tx.readCount() + "</td>");
+            out.println("      <td>" + outcome + "</td>");
+            out.println("      <td>" + htmlEscape(formatFrame(site)) + "</td>");
+            out.println("    </tr>");
+        }
+        out.println("  </tbody>");
+        out.println("</table>");
     }
 
     private static void renderOperations(PrintStream out, Model m) {

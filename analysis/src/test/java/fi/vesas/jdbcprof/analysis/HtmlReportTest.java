@@ -417,6 +417,186 @@ class HtmlReportTest {
     }
 
     @Test
+    void emulatedCursorSectionFlagsNestedMasterDetailPair() throws Exception {
+        // End-to-end: craft a recording that mirrors the transpiled
+        // master/detail shape from the cobol sample (walk + fetch on
+        // CUSTOMERS inside run(); walk + fetch on ORDERS inside
+        // processDetailRecords(), itself called from run()). The
+        // Emulated cursors section must appear and mark the inner
+        // pair as nested.
+        Path tmp = Files.createTempFile("jdbcprof-html-emulcursor-", ".jdbclog");
+        try {
+            try (BinaryLogWriter w = new BinaryLogWriter(tmp)) {
+                w.writeSqlDelta(0, List.of(
+                        "SELECT MIN(ID) FROM CUSTOMERS WHERE ID > ?",
+                        "SELECT ID, NAME FROM CUSTOMERS WHERE ID = ?",
+                        "SELECT MIN(ID) FROM ORDERS WHERE CUSTOMER_ID = ? AND ID > ?",
+                        "SELECT ID, AMOUNT, STATUS FROM ORDERS WHERE ID = ?"));
+                StackFrameSnapshot[] masterWalk = {
+                        new StackFrameSnapshot("com.example.MergeJob", "readNextMaster", 10),
+                        new StackFrameSnapshot("com.example.MergeJob", "run", 5)
+                };
+                StackFrameSnapshot[] masterFetch = {
+                        new StackFrameSnapshot("com.example.MergeJob", "readMasterFields", 20),
+                        new StackFrameSnapshot("com.example.MergeJob", "run", 5)
+                };
+                StackFrameSnapshot[] detailWalk = {
+                        new StackFrameSnapshot("com.example.MergeJob", "readNextDetail", 30),
+                        new StackFrameSnapshot("com.example.MergeJob", "processDetailRecords", 25),
+                        new StackFrameSnapshot("com.example.MergeJob", "run", 5)
+                };
+                StackFrameSnapshot[] detailFetch = {
+                        new StackFrameSnapshot("com.example.MergeJob", "readDetailFields", 40),
+                        new StackFrameSnapshot("com.example.MergeJob", "processDetailRecords", 25),
+                        new StackFrameSnapshot("com.example.MergeJob", "run", 5)
+                };
+                w.writeStackDelta(0, List.of(masterWalk, masterFetch, detailWalk, detailFetch));
+
+                // 10 master walks/fetches, 40 detail walks/fetches.
+                Event[] batch = new Event[100];
+                int idx = 0;
+                for (int i = 0; i < 10; i++) {
+                    batch[idx++] = buildEvent(1_000L + i, 1,
+                            EventType.EXECUTE_QUERY.code(), 0, 0, 500L);
+                    batch[idx++] = buildEvent(2_000L + i, 1,
+                            EventType.EXECUTE_QUERY.code(), 1, 1, 500L);
+                }
+                for (int i = 0; i < 40; i++) {
+                    batch[idx++] = buildEvent(3_000L + i, 1,
+                            EventType.EXECUTE_QUERY.code(), 2, 2, 500L);
+                    batch[idx++] = buildEvent(4_000L + i, 1,
+                            EventType.EXECUTE_QUERY.code(), 3, 3, 500L);
+                }
+                w.writeEvents(batch, idx);
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (PrintStream ps = new PrintStream(bytes, false, StandardCharsets.UTF_8)) {
+                HtmlReport.write(tmp, ps);
+            }
+            String html = bytes.toString(StandardCharsets.UTF_8);
+
+            int sectionStart = html.indexOf(">Emulated cursors (COBOL READ NEXT)<");
+            assertThat(sectionStart)
+                    .as("Emulated cursors section must exist")
+                    .isGreaterThanOrEqualTo(0);
+            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            if (sectionEnd < 0) {
+                sectionEnd = html.length();
+            }
+            String section = html.substring(sectionStart, sectionEnd);
+
+            assertThat(section)
+                    .as("lede must name the transpile shape so readers can place it")
+                    .contains("COBOL")
+                    .contains("READ NEXT");
+            assertThat(section)
+                    .as("at least one card must carry the nested badge for the orders pair")
+                    .contains(">nested<");
+            assertThat(section)
+                    .as("inner pair must point at processDetailRecords as its outer method")
+                    .contains("processDetailRecords");
+            assertThat(section)
+                    .as("inner pair must name the enclosing outer cursor (run)")
+                    .contains("nested in");
+            assertThat(section)
+                    .as("suggestion must recommend the set-oriented rewrite for nested pairs")
+                    .contains("GROUP BY");
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void transactionsSectionFlagsCommitPerRecordRun() throws Exception {
+        // End-to-end: a transpiled-COBOL-style workload that commits
+        // after every record must produce a Transactions section with
+        // the commit-per-record finding naming the outer method as
+        // the common ancestor.
+        Path tmp = Files.createTempFile("jdbcprof-html-txns-", ".jdbclog");
+        try {
+            try (BinaryLogWriter w = new BinaryLogWriter(tmp)) {
+                w.writeSqlDelta(0, List.of(
+                        "UPDATE customers SET name = ?, country = ? WHERE id = ?"));
+                StackFrameSnapshot[] innerFrames = {
+                        new StackFrameSnapshot(
+                                "fi.vesas.jdbcprof.sample.cobol.CustomerMasterBatchJob",
+                                "rewriteMasterRecord", 107),
+                        new StackFrameSnapshot(
+                                "fi.vesas.jdbcprof.sample.cobol.CustomerMasterBatchJob",
+                                "run", 43)
+                };
+                StackFrameSnapshot[] commitFrames = {
+                        new StackFrameSnapshot(
+                                "fi.vesas.jdbcprof.sample.cobol.CustomerMasterBatchJob",
+                                "checkpointRecord", 127),
+                        new StackFrameSnapshot(
+                                "fi.vesas.jdbcprof.sample.cobol.CustomerMasterBatchJob",
+                                "run", 43)
+                };
+                w.writeStackDelta(0, List.of(innerFrames, commitFrames));
+                w.writeOpDelta(0, List.of("customer-master-batch"));
+
+                // 15 back-to-back TXs: UPDATE + COMMIT each, same thread.
+                int count = 15;
+                Event[] batch = new Event[count * 2];
+                long ts = 1_000_000L;
+                for (int i = 0; i < count; i++) {
+                    Event update = buildEvent(ts, 1,
+                            EventType.EXECUTE_UPDATE.code(), 0, 0, 500_000L);
+                    update.operationId = 0L;
+                    update.operationInvocationId = 100L;
+                    Event commit = buildEvent(ts + 1_000_000L, 1,
+                            EventType.COMMIT.code(), -1, 1, 500_000L);
+                    commit.operationId = 0L;
+                    commit.operationInvocationId = 100L;
+                    batch[i * 2] = update;
+                    batch[i * 2 + 1] = commit;
+                    ts += 3_000_000L;
+                }
+                w.writeEvents(batch, batch.length);
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (PrintStream ps = new PrintStream(bytes, false, StandardCharsets.UTF_8)) {
+                HtmlReport.write(tmp, ps);
+            }
+            String html = bytes.toString(StandardCharsets.UTF_8);
+
+            int sectionStart = html.indexOf(">Transactions<");
+            assertThat(sectionStart)
+                    .as("Transactions section must exist")
+                    .isGreaterThanOrEqualTo(0);
+            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            if (sectionEnd < 0) {
+                sectionEnd = html.length();
+            }
+            String section = html.substring(sectionStart, sectionEnd);
+
+            assertThat(section)
+                    .as("overview must show the explicit-TX count")
+                    .contains("explicit transactions")
+                    .contains(">15<");
+            assertThat(section)
+                    .as("commit-per-record finding must appear")
+                    .contains("Commit-per-record runs");
+            assertThat(section)
+                    .as("finding card must name the outer method as common ancestor")
+                    .contains("CustomerMasterBatchJob.run:43");
+            assertThat(section)
+                    .as("card must link to the inner call-site of the loop body")
+                    .contains("rewriteMasterRecord");
+            assertThat(section)
+                    .as("suggestion must recommend widening the TX boundary")
+                    .contains("Widen the transaction boundary");
+            assertThat(section)
+                    .as("longest-transactions table must list TXs from this workload")
+                    .contains("Longest transactions")
+                    .contains("customer-master-batch");
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
     void sortSortablesCarryRawNumericAttributes() throws Exception {
         Path tmp = Files.createTempFile("jdbcprof-html-sort-", ".jdbclog");
         try {

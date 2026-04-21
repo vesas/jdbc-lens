@@ -6,6 +6,9 @@ import fi.vesas.jdbcprof.sample.batch.DailyReportJob;
 import fi.vesas.jdbcprof.sample.batch.OutboxDispatcher;
 import fi.vesas.jdbcprof.sample.batch.ReconciliationJob;
 import fi.vesas.jdbcprof.sample.batch.StatementBuilder;
+import fi.vesas.jdbcprof.sample.cobol.CodeLookupService;
+import fi.vesas.jdbcprof.sample.cobol.CustomerMasterBatchJob;
+import fi.vesas.jdbcprof.sample.cobol.MasterDetailMergeJob;
 import fi.vesas.jdbcprof.sample.dao.AuditDao;
 import fi.vesas.jdbcprof.sample.dao.BalanceDao;
 import fi.vesas.jdbcprof.sample.dao.CustomerDao;
@@ -65,6 +68,9 @@ public final class Main {
         OutboxDispatcher outboxDispatcher = new OutboxDispatcher(outboxDao, audit);
         DailyReportJob reportJob = new DailyReportJob(
                 new StatementBuilder(customers, orders, audit));
+        CustomerMasterBatchJob customerMasterJob = new CustomerMasterBatchJob();
+        MasterDetailMergeJob masterDetailJob = new MasterDetailMergeJob();
+        CodeLookupService codeLookupService = new CodeLookupService();
 
         try (Connection c = ds.getConnection()) {
             Profiler.currentOperation("schema");
@@ -161,6 +167,25 @@ public final class Main {
             // round trip.
             Profiler.currentOperation("outbox-dispatch");
             outboxDispatcher.drain(c, 10);
+
+            // COBOL-transpiled batch shapes. The three jobs below
+            // deliberately emit the query patterns that fall out of a
+            // paragraph-by-paragraph translation: next-key cursor
+            // emulation, per-record commits, INVALID KEY post-checks,
+            // nested master/detail walks, and COPY-expanded SQL
+            // repeated at multiple call-sites.
+            Profiler.currentOperation("schema-extend");
+            codeLookupService.seedCodes(c);
+
+            Profiler.currentOperation("post-master-update");
+            customerMasterJob.run(c, 12);
+
+            Profiler.currentOperation("match-master-detail");
+            masterDetailJob.run(c, 10);
+
+            Profiler.currentOperation("enrich-with-codes");
+            codeLookupService.enrich(c, new int[] {
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15});
 
             Profiler.currentOperation("daily-report");
             reportJob.run(c, new int[] {1, 7, 12, 23, 42});

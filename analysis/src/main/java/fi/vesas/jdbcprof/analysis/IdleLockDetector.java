@@ -6,7 +6,6 @@ import fi.vesas.jdbcprof.capture.StackFrameSnapshot;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,8 +54,9 @@ public final class IdleLockDetector {
             if (opEvents == null || opEvents.isEmpty()) {
                 continue;
             }
-            for (List<Event> txn : sliceExplicitTransactions(opEvents)) {
-                IdleLockFinding f = analyseTxn(opId, opNames.get(opId), txn, sqls, stacks);
+            for (Transaction txn : Transactions.reconstruct(opId, opEvents)) {
+                IdleLockFinding f = analyseTxn(opId, opNames.get(opId),
+                        txn.events(), sqls, stacks);
                 if (f != null) {
                     out.add(f);
                 }
@@ -69,44 +69,6 @@ public final class IdleLockDetector {
                 .comparingLong(IdleLockFinding::maxIdleGapNanos).reversed()
                 .thenComparing(Comparator.comparingLong(
                         IdleLockFinding::totalIdleNanos).reversed()));
-        return out;
-    }
-
-    /**
-     * Group events by thread, sort by timestamp, and cut each thread's
-     * run into explicit transactions (events ending in COMMIT or
-     * ROLLBACK). Autocommit threads — no commit/rollback anywhere —
-     * are skipped: nothing to analyse.
-     */
-    private static List<List<Event>> sliceExplicitTransactions(List<Event> events) {
-        Map<Integer, List<Event>> byThread = new HashMap<>();
-        for (Event e : events) {
-            byThread.computeIfAbsent(e.threadId, k -> new ArrayList<>()).add(e);
-        }
-        List<List<Event>> out = new ArrayList<>();
-        for (List<Event> threadEvents : byThread.values()) {
-            threadEvents.sort(Comparator.comparingLong(e -> e.timestampNanos));
-            boolean sawBoundary = false;
-            List<Event> current = new ArrayList<>();
-            for (Event e : threadEvents) {
-                current.add(e);
-                if (e.eventType == EventType.COMMIT.code()
-                        || e.eventType == EventType.ROLLBACK.code()) {
-                    out.add(current);
-                    current = new ArrayList<>();
-                    sawBoundary = true;
-                }
-            }
-            if (!sawBoundary) {
-                // Autocommit — no explicit TX to analyse on this thread.
-                continue;
-            }
-            if (!current.isEmpty()) {
-                // Trailing run after at least one commit/rollback but
-                // not yet closed. Still a TX; let the detector see it.
-                out.add(current);
-            }
-        }
         return out;
     }
 
