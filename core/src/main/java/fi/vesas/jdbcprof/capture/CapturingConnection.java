@@ -238,7 +238,9 @@ final class CapturingConnection implements Connection {
         long t0 = System.nanoTime();
         delegate.close();
         long t1 = System.nanoTime();
-        ctx.emit(CLOSE, -1, t0, t1 - t0, -1, 0, 0L);
+        // Lifetime-boundary marker. Skip the stack walk — see
+        // CaptureContext#emitNoTrace.
+        ctx.emitNoTrace(CLOSE, -1, t0, t1 - t0, -1, 0, 0L);
     }
 
     // --- everything below is straight delegation ---

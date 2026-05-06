@@ -68,6 +68,26 @@ class StackTraceInternTableTest {
     }
 
     @Test
+    void skipFramesDropsLeadingFrames() {
+        // skip=2 elides the StackTraceInternTable.internCurrent frame
+        // and the captureVia helper frame, so the snapshot starts at
+        // this test method — the call site we'd normally have to walk
+        // past two infra frames to reach.
+        StackTraceInternTable t = new StackTraceInternTable(30, 2);
+        int id = captureVia(t);
+        StackFrameSnapshot[] frames = t.get(id);
+        assertThat(frames[0].className())
+                .isEqualTo("fi.vesas.jdbcprof.capture.StackTraceInternTableTest");
+        assertThat(frames[0].methodName()).isEqualTo("skipFramesDropsLeadingFrames");
+    }
+
+    @Test
+    void skipFramesRejectsNegative() {
+        assertThatThrownBy(() -> new StackTraceInternTable(30, -1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void entriesSinceReturnsDelta() {
         StackTraceInternTable t = new StackTraceInternTable(30);
         int first = captureVia(t);

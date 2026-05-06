@@ -5,6 +5,7 @@ jmh = "1.37"
 picocli = "4.7.6"
 jmh-gradle-plugin = "0.7.2"
 h2 = "2.3.232"
+p6spy = "3.9.1"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
@@ -14,6 +15,7 @@ jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
 jmh-annotations = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
+p6spy = { module = "p6spy:p6spy", version.ref = "p6spy" }
 
 [plugins]
 jmh = { id = "me.champeau.jmh", version.ref = "jmh-gradle-plugin" }

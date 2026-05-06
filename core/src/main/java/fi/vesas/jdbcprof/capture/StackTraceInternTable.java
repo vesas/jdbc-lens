@@ -17,14 +17,41 @@ import java.util.concurrent.ConcurrentHashMap;
  * ConcurrentHashMap} lookup. No snapshot objects are allocated on
  * this path.
  *
+ * <p>The hash function deliberately uses {@link
+ * StackWalker.StackFrame#getByteCodeIndex bci} and the declaring
+ * {@link Class}'s identity rather than line numbers and class names.
+ * Line-number resolution forces a {@code LineNumberTable} scan in
+ * the class metadata — the dominant per-frame cost in the previous
+ * design — and cached String hashCodes still go through one extra
+ * field read each. Identity hash on a {@link Class} is a single
+ * native field, and bci is a primitive on the frame: both are
+ * essentially free, dropping the per-frame work an order of
+ * magnitude. The hash basis is purely in-memory; on-disk snapshots
+ * keep human-readable class names and line numbers (see below).
+ *
  * <p>Misses take a second walk to snapshot frames into immutable
- * records and an insertion under {@code synchronized (this)}. Misses
- * plateau after warm-up for any real application (spec §5.5).
+ * records and an insertion under {@code synchronized (this)}. The
+ * snapshot path uses {@link StackWalker.StackFrame#getLineNumber}
+ * deliberately — line numbers are the form the report needs, the
+ * cost is paid once per distinct trace, and snapshots plateau after
+ * warm-up for any real application (spec §5.5).
  *
  * <p>64-bit hash collisions are treated as matches. At expected
  * trace cardinality (thousands) the collision probability is on the
  * order of 10⁻¹³; upgrading to keyed-by-(hash, frames) dedup is
  * deferred until benchmarks show it matters.
+ *
+ * <p>The {@code skipFrames} constructor parameter drops a fixed
+ * number of frames at the bottom of every walk — used by
+ * {@link CaptureContext} to elide its own dispatch frames so neither
+ * the hash nor the snapshot wastes work materializing them. The
+ * skipped frames would be filtered by {@code Attribution} at report time
+ * anyway; doing it at capture time saves the per-frame
+ * {@link StackWalker.StackFrame} materialization that the analyzer
+ * never used. {@link java.util.stream.Stream#skip(long) Stream.skip}
+ * advances the underlying iterator without calling
+ * {@code getDeclaringClass()} / {@code getMethodName()} /
+ * {@code getByteCodeIndex()}, so the skipped-frame cost truly is zero.
  *
  * <h2>Known hot-path allocations</h2>
  *
@@ -38,17 +65,32 @@ public final class StackTraceInternTable {
 
     private static final long FNV_OFFSET = 0xcbf29ce484222325L;
     private static final long FNV_PRIME = 0x100000001b3L;
-    private static final StackWalker WALKER = StackWalker.getInstance();
+    // RETAIN_CLASS_REFERENCE so frameDigest can call getDeclaringClass()
+    // and use its identity hash for the per-frame digest. Without this
+    // option the StackWalker hides Class references and we'd have to go
+    // back through getClassName().hashCode() — the slower path the
+    // previous version of this class used.
+    private static final StackWalker WALKER = StackWalker.getInstance(
+            StackWalker.Option.RETAIN_CLASS_REFERENCE);
 
     private final int maxDepth;
+    private final int skipFrames;
     private final ConcurrentHashMap<Long, Integer> byHash = new ConcurrentHashMap<>();
     private final List<StackFrameSnapshot[]> entries = new ArrayList<>();
 
     public StackTraceInternTable(int maxDepth) {
+        this(maxDepth, 0);
+    }
+
+    public StackTraceInternTable(int maxDepth, int skipFrames) {
         if (maxDepth < 1) {
             throw new IllegalArgumentException("maxDepth must be >= 1, got " + maxDepth);
         }
+        if (skipFrames < 0) {
+            throw new IllegalArgumentException("skipFrames must be >= 0, got " + skipFrames);
+        }
         this.maxDepth = maxDepth;
+        this.skipFrames = skipFrames;
     }
 
     public int maxDepth() {
@@ -57,9 +99,11 @@ public final class StackTraceInternTable {
 
     public int internCurrent() {
         final int depth = maxDepth;
+        final int skip = skipFrames;
 
         long hash = WALKER.walk(stream ->
-                stream.limit(depth)
+                stream.skip(skip)
+                        .limit(depth)
                         .mapToLong(StackTraceInternTable::frameDigest)
                         .reduce(FNV_OFFSET, StackTraceInternTable::mix));
 
@@ -69,7 +113,8 @@ public final class StackTraceInternTable {
         }
 
         StackFrameSnapshot[] snapshot = WALKER.walk(stream ->
-                stream.limit(depth)
+                stream.skip(skip)
+                        .limit(depth)
                         .map(StackTraceInternTable::snapshot)
                         .toArray(StackFrameSnapshot[]::new));
 
@@ -110,11 +155,13 @@ public final class StackTraceInternTable {
     }
 
     private static long frameDigest(StackWalker.StackFrame f) {
-        // Packs three component identities into one long. Cached String
-        // hashCodes make this allocation-free once per frame.
-        long d = ((long) f.getClassName().hashCode()) << 32;
+        // Packs three component identities into one long. The Class
+        // identity hash and bci are both primitive field reads; the
+        // method-name hashCode is cached on the interned String after
+        // the first access. No LineNumberTable scan, no allocation.
+        long d = ((long) System.identityHashCode(f.getDeclaringClass())) << 32;
         d ^= f.getMethodName().hashCode();
-        d ^= (long) f.getLineNumber() << 16;
+        d ^= (long) f.getByteCodeIndex() << 16;
         return d;
     }
 

@@ -116,30 +116,77 @@ public final class HtmlReport {
         List<TableAccessFinding> tableAccess =
                 TableAccessAudit.detect(m.sqls, m.eventsByOp, m.stacks);
         FlameGraph.Node flame = FlameGraph.build(m.executeAgg, m.stacks);
+        Map<Integer, TemplateStats> templateStats = computeTemplateStats(m);
+        boolean hasOpIds = m.opStats.keySet().stream().anyMatch(k -> k != NO_OPERATION);
+        boolean hasParams = !m.paramValuesById.isEmpty();
+        List<NotRunDetector> notRun = new ArrayList<>();
+        if (!hasOpIds) {
+            notRun.add(new NotRunDetector(
+                    "Idle locks, commit-per-record runs, in-operation redundancy",
+                    "Call <code>Profiler.currentOperation(\"name\")</code> at "
+                            + "request/test/job boundaries so the analyzer can "
+                            + "scope these detectors to a single logical operation."));
+        }
+        if (!hasParams) {
+            notRun.add(new NotRunDetector(
+                    "Entity access audit, read-then-write, write amplification",
+                    "Enable parameter capture with "
+                            + "<code>ProfilerConfig.withCaptureParameterValues(true)</code>. "
+                            + "Off by default — review the redaction policy before "
+                            + "turning it on for production-shaped data."));
+        }
+        SummaryInputs summary = new SummaryInputs(
+                m, findings, emulatedCursors, redundant, entities, readThenWrite,
+                overWide, writeAmp, idleLocks, commitPerRecord, tableAccess, scan);
         renderHead(out, input);
-        renderSummary(out, m);
-        section(out, "N+1 findings", () -> renderFindings(out, findings));
-        section(out, "Emulated cursors (COBOL READ NEXT)",
+        renderSummary(out, summary);
+        LinkedHashMap<String, Runnable> sections = new LinkedHashMap<>();
+        sections.put("Flamegraph", () -> renderFlameGraph(out, flame));
+        sections.put("Operations", () -> renderOperations(out, m));
+        if (hasOpIds) {
+            sections.put("Transactions holding locks during non-DB work",
+                    () -> renderIdleLocks(out, idleLocks));
+            sections.put("Commit-per-record runs",
+                    () -> renderCommitPerRecord(out, commitPerRecord));
+        }
+        sections.put("N+1 findings", () -> renderFindings(out, findings));
+        sections.put("Walk-and-fetch loops",
                 () -> renderEmulatedCursors(out, emulatedCursors));
-        section(out, "Redundant queries", () -> renderRedundant(out, redundant, m));
-        section(out, "Entity access audit", () -> renderEntityAccess(out, entities, m));
-        section(out, "Read-then-write on the same row",
-                () -> renderReadThenWrite(out, readThenWrite, m));
-        section(out, "Wide UPDATEs (REWRITE RECORD smell)",
-                () -> renderOverWideUpdate(out, overWide));
-        section(out, "Write amplification (UPDATE-then-UPDATE on same row)",
-                () -> renderWriteAmplification(out, writeAmp, m));
-        section(out, "Transactions holding locks during non-DB work",
-                () -> renderIdleLocks(out, idleLocks));
-        section(out, "Transactions",
-                () -> renderTransactions(out, txByOp, commitPerRecord, m));
-        section(out, "Cache candidates (per-table access)",
+        sections.put("Write patterns", () -> {
+            out.println("<h3>Wide UPDATEs</h3>");
+            renderOverWideUpdate(out, overWide);
+            if (hasParams) {
+                out.println("<h3>UPDATE-then-UPDATE on the same row</h3>");
+                renderWriteAmplification(out, writeAmp, m);
+            }
+        });
+        if (hasOpIds) {
+            sections.put("In-operation redundancy", () -> {
+                out.println("<h3>Repeated queries with identical parameters</h3>");
+                renderRedundant(out, redundant, m);
+                if (hasParams) {
+                    out.println("<h3>Multiple templates touching the same entity</h3>");
+                    renderEntityAccess(out, entities, m);
+                    out.println("<h3>SELECT followed by UPDATE on the same row</h3>");
+                    renderReadThenWrite(out, readThenWrite, m);
+                }
+            });
+        }
+        sections.put("Call-sites", () -> renderCallSitesTable(out, m));
+        sections.put("Templates",
+                () -> renderTemplatesTable(out, m, templateStats));
+        sections.put("Table access — caching analysis",
                 () -> renderTableAccess(out, tableAccess, scan));
-        section(out, "Operations", () -> renderOperations(out, m));
-        section(out, "Flamegraph", () -> renderFlameGraph(out, flame));
-        section(out, "(Call-site, template) pairs", () -> renderPairsTable(out, m));
-        section(out, "Call-sites", () -> renderCallSitesTable(out, m));
-        section(out, "Templates", () -> renderTemplatesTable(out, m));
+        sections.put("Transactions",
+                () -> renderTransactions(out, txByOp, m));
+        if (!notRun.isEmpty()) {
+            sections.put("Detectors not run",
+                    () -> renderDetectorsNotRun(out, notRun));
+        }
+        renderToc(out, sections.keySet());
+        for (Map.Entry<String, Runnable> entry : sections.entrySet()) {
+            section(out, entry.getKey(), entry.getValue());
+        }
         renderFooter(out);
     }
 
@@ -147,10 +194,41 @@ public final class HtmlReport {
     // scan titles first and expand only what matters. <details>/<summary>
     // keeps the report self-contained — no JS, no external CSS.
     private static void section(PrintStream out, String title, Runnable body) {
-        out.println("<details class=\"section\"><summary>"
+        out.println("<details class=\"section\" id=\"" + slugify(title) + "\"><summary>"
                 + htmlEscape(title) + "</summary>");
         body.run();
         out.println("</details>");
+    }
+
+    private static void renderToc(PrintStream out, Iterable<String> titles) {
+        out.println("<nav class=\"toc\" aria-label=\"Sections\">");
+        out.println("  <strong>Jump to</strong>");
+        out.println("  <ul>");
+        for (String t : titles) {
+            out.println("    <li><a href=\"#" + slugify(t) + "\">"
+                    + htmlEscape(t) + "</a></li>");
+        }
+        out.println("  </ul>");
+        out.println("</nav>");
+    }
+
+    private static String slugify(String title) {
+        StringBuilder sb = new StringBuilder(title.length());
+        boolean prevDash = false;
+        for (int i = 0; i < title.length(); i++) {
+            char c = title.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                sb.append(Character.toLowerCase(c));
+                prevDash = false;
+            } else if (!prevDash && sb.length() > 0) {
+                sb.append('-');
+                prevDash = true;
+            }
+        }
+        while (sb.length() > 0 && sb.charAt(sb.length() - 1) == '-') {
+            sb.deleteCharAt(sb.length() - 1);
+        }
+        return sb.toString();
     }
 
     private static void writeDrillDownPages(Path mainReportFile, Model m) throws IOException {
@@ -179,9 +257,8 @@ public final class HtmlReport {
 
     private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, Model m) {
         if (findings.isEmpty()) {
-            out.println("<p class=\"findings-empty\">No repeated (template, parameters) pairs "
-                    + "within a single operation. The detector needs op-ids — call "
-                    + "<code>Profiler.currentOperation(\"name\")</code> to scope detection.</p>");
+            out.println("<p class=\"findings-empty\">No repeated (template, parameters) "
+                    + "pairs within a single operation.</p>");
             return;
         }
         out.println("<p class=\"findings-empty\">The same template fired more than once "
@@ -281,12 +358,6 @@ public final class HtmlReport {
     }
 
     private static void renderEntityAccess(PrintStream out, List<EntityFinding> findings, Model m) {
-        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
-            out.println("<p class=\"findings-empty\">Parameter values were not captured, "
-                    + "so the audit cannot tell which entity each query touched. "
-                    + "Enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
-            return;
-        }
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No entity was accessed by more than one "
                     + "distinct template within the same operation.</p>");
@@ -328,12 +399,6 @@ public final class HtmlReport {
 
     private static void renderReadThenWrite(PrintStream out,
                                              List<ReadThenWriteFinding> findings, Model m) {
-        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
-            out.println("<p class=\"findings-empty\">Parameter values weren't captured; "
-                    + "can't match SELECT + UPDATE on the same key. Enable with "
-                    + "<code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
-            return;
-        }
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No SELECT + UPDATE/DELETE pair on the "
                     + "same row inside the same operation.</p>");
@@ -381,25 +446,24 @@ public final class HtmlReport {
     private static void renderEmulatedCursors(PrintStream out,
                                                List<EmulatedCursorFinding> findings) {
         if (findings.isEmpty()) {
-            out.println("<p class=\"findings-empty\">No emulated-cursor pairs "
+            out.println("<p class=\"findings-empty\">No walk-and-fetch pairs "
                     + "(a <code>SELECT MIN(key) … WHERE key &gt; ?</code> walk "
                     + "paired with a <code>SELECT … WHERE key = ?</code> fetch "
                     + "from the same outer method) were observed above the default "
                     + "threshold of " + EmulatedCursorDetector.DEFAULT_MIN_WALKS + " walks.</p>");
             return;
         }
-        out.println("<p class=\"findings-empty\">A pair of templates whose shape is "
-                + "the SQL fingerprint of a COBOL <code>READ NEXT</code> loop the "
-                + "transpiler couldn't recover: one query walks a key column with "
-                + "<code>MIN</code> / <code>MAX</code> and a strict inequality, the "
-                + "other fetches row fields by that same key. Both queries live under "
-                + "the same outer method. The fix is not the usual N+1 batch-or-join "
-                + "— it's to replace the <em>pair</em> with one scrolling "
-                + "<code>ResultSet</code>, or one set-oriented "
-                + "<code>GROUP BY</code>. Nested pairs (a "
-                + "<code>PERFORM UNTIL</code> inside a "
-                + "<code>PERFORM UNTIL</code>) are flagged — those are almost "
-                + "always replaceable with a single <code>JOIN … GROUP BY</code>.</p>");
+        out.println("<p class=\"findings-empty\">A pair of templates whose shape "
+                + "betrays row-at-a-time access through hand-written SQL: one query "
+                + "walks a key column with <code>MIN</code> / <code>MAX</code> and a "
+                + "strict inequality, the other fetches row fields by that same key. "
+                + "Both queries live under the same outer method. The fix is not "
+                + "the usual N+1 batch-or-join — it's to replace the <em>pair</em> "
+                + "with one scrolling <code>ResultSet</code>, or one set-oriented "
+                + "<code>GROUP BY</code>. Nested pairs (a walk-and-fetch loop "
+                + "inside another walk-and-fetch loop) are flagged — those are "
+                + "almost always replaceable with a single "
+                + "<code>JOIN … GROUP BY</code>.</p>");
         out.println("<div class=\"findings\">");
         for (EmulatedCursorFinding f : findings) {
             out.println("  <div class=\"finding\">");
@@ -446,12 +510,12 @@ public final class HtmlReport {
 
     private static String emulatedCursorSuggestion(EmulatedCursorFinding f) {
         if (f.nested()) {
-            return "Two emulated cursors nested inside each other. Almost always a "
-                    + "transpiled master/detail loop that a single "
+            return "Two walk-and-fetch loops nested inside each other. Almost "
+                    + "always a master/detail traversal that a single "
                     + "<code>SELECT … FROM " + htmlEscape(f.table())
-                    + " JOIN … GROUP BY</code> would replace — the "
-                    + "transpiler couldn't recover set semantics from paragraph-by-"
-                    + "paragraph source, but the analyzer can see them here.";
+                    + " JOIN … GROUP BY</code> would replace — the row-at-a-time "
+                    + "shape hides set semantics that the analyzer can recover "
+                    + "from the call pattern.";
         }
         return "Replace the walk + fetch pair with one scrolling "
                 + "<code>ResultSet</code> (<code>SELECT … FROM "
@@ -647,12 +711,6 @@ public final class HtmlReport {
     private static void renderWriteAmplification(PrintStream out,
                                                   List<WriteAmplificationFinding> findings,
                                                   Model m) {
-        if (m.paramValuesById == null || m.paramValuesById.isEmpty()) {
-            out.println("<p class=\"findings-empty\">Parameter values weren't captured; "
-                    + "can't match repeated UPDATEs on the same row. Enable with "
-                    + "<code>ProfilerConfig.withCaptureParameterValues(true)</code>.</p>");
-            return;
-        }
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No row was UPDATEd more than once "
                     + "inside the same operation.</p>");
@@ -842,7 +900,6 @@ public final class HtmlReport {
 
     private static void renderTransactions(PrintStream out,
                                            Map<Long, List<Transaction>> txByOp,
-                                           List<CommitPerRecordFinding> commitPerRecord,
                                            Model m) {
         List<Transaction> all = new ArrayList<>();
         for (List<Transaction> list : txByOp.values()) {
@@ -859,34 +916,36 @@ public final class HtmlReport {
         }
         out.println("<p class=\"findings-empty\">Every explicit transaction reconstructed "
                 + "from <code>COMMIT</code> / <code>ROLLBACK</code> boundaries. The "
-                + "overview shows the overall transaction shape of the workload; the "
-                + "finding cards below flag runs of many short back-to-back transactions "
-                + "that suggest an over-narrow TX boundary (commit-per-record).</p>");
+                + "overview gives the overall transaction shape of the workload; the "
+                + "table below lists the longest transactions by wall-clock time. "
+                + "<em>Commit-per-record</em> runs are flagged in their own findings "
+                + "section above.</p>");
 
         renderTransactionOverview(out, all);
+        renderTopTransactionsTable(out, all, m);
+    }
 
-        if (commitPerRecord.isEmpty()) {
+    private static void renderCommitPerRecord(PrintStream out,
+                                              List<CommitPerRecordFinding> findings) {
+        if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No commit-per-record runs detected. "
                     + "Runs must contain at least "
                     + CommitPerRecordDetector.DEFAULT_MIN_RUN_LENGTH
                     + " consecutive short TXs sharing an outer call-site.</p>");
-        } else {
-            out.println("<h3>Commit-per-record runs</h3>");
-            out.println("<p class=\"findings-empty\">Each card below is a run of many "
-                    + "short explicit transactions fired back-to-back from the same "
-                    + "outer method. Each TX did only a handful of statements and "
-                    + "committed — the signature of a loop that commits every "
-                    + "iteration (transpiled COBOL <code>EXEC SQL COMMIT</code>, or a "
-                    + "per-object ORM save inside a <code>for</code>). Cards are "
-                    + "ranked by total wall time the pattern consumed.</p>");
-            out.println("<div class=\"findings\">");
-            for (CommitPerRecordFinding f : commitPerRecord) {
-                renderCommitPerRecordCard(out, f);
-            }
-            out.println("</div>");
+            return;
         }
-
-        renderTopTransactionsTable(out, all, m);
+        out.println("<p class=\"findings-empty\">Each card below is a run of many "
+                + "short explicit transactions fired back-to-back from the same "
+                + "outer method. Each TX did only a handful of statements and "
+                + "committed — the signature of a loop that commits every "
+                + "iteration (a per-object ORM save inside a <code>for</code>, "
+                + "or any per-record <code>commit()</code> in batch code). "
+                + "Cards are ranked by total wall time the pattern consumed.</p>");
+        out.println("<div class=\"findings\">");
+        for (CommitPerRecordFinding f : findings) {
+            renderCommitPerRecordCard(out, f);
+        }
+        out.println("</div>");
     }
 
     private static void renderTransactionOverview(PrintStream out, List<Transaction> all) {
@@ -1308,7 +1367,17 @@ public final class HtmlReport {
                 @Override
                 public void onEvents(List<Event> events) {
                     for (Event e : events) {
-                        m.agg.add(e);
+                        // Events that the capture path emitted with no
+                        // stack (NEXT, CLOSE — the analyzer doesn't
+                        // attribute against their call-sites) carry
+                        // CaptureContext.NO_STACK_TRACE. Keep them out
+                        // of the by-stack rollups so the top-callsites
+                        // ranking and the cardinality maps don't grow
+                        // a synthetic "stack[-1]" bucket.
+                        boolean hasStack = e.stackTraceId >= 0;
+                        if (hasStack) {
+                            m.agg.add(e);
+                        }
                         if (isExecute(e.eventType)) {
                             m.executeAgg.add(e);
                         }
@@ -1322,12 +1391,14 @@ public final class HtmlReport {
                         if (end > m.lastTs) {
                             m.lastTs = end;
                         }
-                        m.templatesPerStack
-                                .computeIfAbsent(e.stackTraceId, k -> new HashSet<>())
-                                .add(e.sqlId);
-                        m.stacksPerTemplate
-                                .computeIfAbsent(e.sqlId, k -> new HashSet<>())
-                                .add(e.stackTraceId);
+                        if (hasStack) {
+                            m.templatesPerStack
+                                    .computeIfAbsent(e.stackTraceId, k -> new HashSet<>())
+                                    .add(e.sqlId);
+                            m.stacksPerTemplate
+                                    .computeIfAbsent(e.sqlId, k -> new HashSet<>())
+                                    .add(e.stackTraceId);
+                        }
                         OpStats os = m.opStats.computeIfAbsent(e.operationId, k -> new OpStats());
                         os.count++;
                         os.totalDurationNanos += dur;
@@ -1434,6 +1505,7 @@ public final class HtmlReport {
                 }
                 h1 { margin: 0 0 4px 0; font-size: 20px; }
                 h2 { margin: 32px 0 12px 0; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+                h3 { margin: 20px 0 8px 0; font-size: 14px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
                 details.section {
                   margin: 24px 0 0 0;
                   border-bottom: 1px solid var(--border);
@@ -1480,6 +1552,73 @@ public final class HtmlReport {
                 ol.top { padding-left: 20px; margin: 8px 0 0 0; }
                 ol.top li { margin: 2px 0; }
                 ol.top code { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); }
+                .severity { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px 0; }
+                .severity .sev {
+                  display: inline-block;
+                  padding: 4px 10px;
+                  border-radius: 12px;
+                  background: #fff8e1;
+                  border: 1px solid #f0c36d;
+                  font-size: 12px;
+                  font-family: var(--mono);
+                }
+                p.coverage { margin: 0 0 16px 0; font-size: 13px; }
+                /* Per-template duration histogram in the Templates table.
+                   Inline-flex so the bars sit on a baseline; min-height on
+                   each bar keeps empty buckets faintly visible so the row's
+                   x-axis stays legible. */
+                .hist {
+                  display: inline-flex;
+                  align-items: flex-end;
+                  width: 76px;
+                  height: 18px;
+                  gap: 1px;
+                  vertical-align: middle;
+                  background: var(--bg-alt);
+                  border: 1px solid var(--border);
+                  border-radius: 2px;
+                  padding: 1px;
+                }
+                .hist > span {
+                  display: block;
+                  width: 3px;
+                  background: var(--accent);
+                  min-height: 1px;
+                  flex: 0 0 auto;
+                }
+                nav.toc {
+                  margin: 16px 0 24px 0;
+                  padding: 12px 14px;
+                  background: var(--bg-alt);
+                  border: 1px solid var(--border);
+                  border-radius: 6px;
+                  font-size: 13px;
+                }
+                nav.toc strong {
+                  display: block;
+                  font-size: 11px;
+                  color: var(--fg-muted);
+                  text-transform: uppercase;
+                  letter-spacing: 0.04em;
+                  margin-bottom: 6px;
+                }
+                nav.toc ul {
+                  list-style: none;
+                  padding: 0;
+                  margin: 0;
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 6px 14px;
+                }
+                nav.toc a {
+                  color: var(--accent);
+                  text-decoration: none;
+                }
+                nav.toc a:hover { text-decoration: underline; }
+                /* Make :target offset slightly so the section heading
+                   isn't tucked under the sticky table headers in the
+                   inventory tables. */
+                details.section:target > summary { color: var(--accent); }
                 .findings { display: grid; gap: 12px; margin: 8px 0 0 0; }
                 .finding {
                   border: 1px solid #f0c36d;
@@ -1668,7 +1807,40 @@ public final class HtmlReport {
         out.println("<body>");
     }
 
-    private static void renderSummary(PrintStream out, Model m) {
+    private record NotRunDetector(String label, String enableHint) {
+    }
+
+    private static void renderDetectorsNotRun(PrintStream out, List<NotRunDetector> entries) {
+        out.println("<p class=\"findings-empty\">These detectors require recording "
+                + "options that aren't enabled — they didn't run for this report. "
+                + "Each entry below explains how to turn the missing input on.</p>");
+        out.println("<dl class=\"finding-kv\">");
+        for (NotRunDetector e : entries) {
+            out.println("  <dt>" + htmlEscape(e.label()) + "</dt>");
+            // enableHint is a controlled string we author above with HTML
+            // intentionally embedded (e.g. <code>...</code>); don't escape.
+            out.println("  <dd>" + e.enableHint() + "</dd>");
+        }
+        out.println("</dl>");
+    }
+
+    private record SummaryInputs(
+            Model m,
+            List<N1Finding> n1,
+            List<EmulatedCursorFinding> emulatedCursors,
+            List<RedundantFinding> redundant,
+            List<EntityFinding> entities,
+            List<ReadThenWriteFinding> readThenWrite,
+            List<OverWideUpdateFinding> overWide,
+            List<WriteAmplificationFinding> writeAmp,
+            List<IdleLockFinding> idleLocks,
+            List<CommitPerRecordFinding> commitPerRecord,
+            List<TableAccessFinding> tableAccess,
+            SourceScanResult scan) {
+    }
+
+    private static void renderSummary(PrintStream out, SummaryInputs s) {
+        Model m = s.m();
         out.println("<h1>jdbc-prof report</h1>");
         out.println("<div class=\"meta\">Recording: <code>" + htmlEscape(m.source.toString()) + "</code></div>");
 
@@ -1679,6 +1851,9 @@ public final class HtmlReport {
         stat(out, "Templates", Integer.toString(m.sqls.size()));
         stat(out, "Call-sites", Integer.toString(m.stacks.size()));
         out.println("</div>");
+
+        renderSeverity(out, s);
+        renderSourceCoverage(out, s);
 
         out.println("<h2>Top call-sites by DB time</h2>");
         out.println("<ol class=\"top\">");
@@ -1691,6 +1866,90 @@ public final class HtmlReport {
                     + " across " + entry.getValue().count() + " events</span></li>");
         }
         out.println("</ol>");
+    }
+
+    private static void renderSeverity(PrintStream out, SummaryInputs s) {
+        int total = s.n1().size() + s.idleLocks().size() + s.overWide().size()
+                + s.writeAmp().size() + s.redundant().size() + s.emulatedCursors().size()
+                + s.entities().size() + s.readThenWrite().size()
+                + s.commitPerRecord().size();
+        out.println("<h2>Severity</h2>");
+        if (total == 0) {
+            out.println("<p class=\"findings-empty\">No detector flagged anything in "
+                    + "this recording.</p>");
+            return;
+        }
+        out.println("<div class=\"severity\">");
+        // Order: highest-leverage findings first.
+        long worstIdleGap = s.idleLocks().stream()
+                .mapToLong(IdleLockFinding::maxIdleGapNanos).max().orElse(0L);
+        sevBadge(out, "Idle locks", s.idleLocks().size(),
+                worstIdleGap > 0 ? "worst gap " + formatDuration(worstIdleGap) : null);
+        long worstN1 = s.n1().stream()
+                .mapToLong(N1Finding::totalDurationNanos).max().orElse(0L);
+        sevBadge(out, "N+1", s.n1().size(),
+                worstN1 > 0 ? "biggest " + formatDuration(worstN1) : null);
+        int worstWide = s.overWide().stream()
+                .mapToInt(OverWideUpdateFinding::setColumnCount).max().orElse(0);
+        sevBadge(out, "Wide UPDATEs", s.overWide().size(),
+                worstWide > 0 ? worstWide + " columns" : null);
+        sevBadge(out, "Write amplification", s.writeAmp().size(), null);
+        long worstCpr = s.commitPerRecord().stream()
+                .mapToLong(CommitPerRecordFinding::totalWallNanos).max().orElse(0L);
+        sevBadge(out, "Commit-per-record", s.commitPerRecord().size(),
+                worstCpr > 0 ? "biggest run " + formatDuration(worstCpr) : null);
+        sevBadge(out, "Walk-and-fetch", s.emulatedCursors().size(), null);
+        sevBadge(out, "Redundant queries", s.redundant().size(), null);
+        sevBadge(out, "Entity audit", s.entities().size(), null);
+        sevBadge(out, "Read-then-write", s.readThenWrite().size(), null);
+        out.println("</div>");
+    }
+
+    private static void sevBadge(PrintStream out, String label, int count, String extra) {
+        if (count == 0) {
+            return;
+        }
+        out.println("  <span class=\"sev\"><strong>" + count + "</strong> "
+                + htmlEscape(label)
+                + (extra == null ? ""
+                    : " <span class=\"muted\">— " + htmlEscape(extra) + "</span>")
+                + "</span>");
+    }
+
+    private static void renderSourceCoverage(PrintStream out, SummaryInputs s) {
+        if (s.scan().isEmpty()) {
+            return;
+        }
+        Set<String> staticTables = new HashSet<>();
+        for (String t : s.scan().tables()) {
+            if (t != null && !t.isEmpty()) {
+                staticTables.add(t.toLowerCase(Locale.ROOT));
+            }
+        }
+        if (staticTables.isEmpty()) {
+            return;
+        }
+        Set<String> runtimeTables = new HashSet<>();
+        for (TableAccessFinding f : s.tableAccess()) {
+            if (f.table() != null) {
+                runtimeTables.add(f.table().toLowerCase(Locale.ROOT));
+            }
+        }
+        int exercised = 0;
+        for (String t : staticTables) {
+            if (runtimeTables.contains(t)) {
+                exercised++;
+            }
+        }
+        out.println("<p class=\"coverage\">Source scan: <strong>"
+                + exercised + "</strong> of <strong>" + staticTables.size()
+                + "</strong> tables exercised at runtime"
+                + (exercised < staticTables.size()
+                    ? " <span class=\"muted\">— "
+                            + (staticTables.size() - exercised)
+                            + " unexercised; recording may be missing code paths</span>"
+                    : "")
+                + "</p>");
     }
 
     private static void stat(PrintStream out, String label, String value) {
@@ -1752,29 +2011,6 @@ public final class HtmlReport {
         return "sql[" + sqlId + "]";
     }
 
-    private static void renderPairsTable(PrintStream out, Model m) {
-        out.println("<table>");
-        out.println("  <thead><tr>"
-                + "<th>Call-site</th>"
-                + "<th>Template</th>"
-                + "<th class=\"num\" data-default-sort=\"desc\" aria-sort=\"desc\">DB time</th>"
-                + "<th class=\"num\">Count</th>"
-                + "</tr></thead>");
-        out.println("  <tbody>");
-        for (var entry : m.agg.topPairs(Integer.MAX_VALUE)) {
-            Aggregator.PairKey k = entry.getKey();
-            Aggregator.Stats s = entry.getValue();
-            out.println("    <tr>"
-                    + tdSite(m, k.stackTraceId())
-                    + tdSql(m, k.sqlId())
-                    + tdDuration(s.totalDurationNanos())
-                    + tdCount(s.count())
-                    + "</tr>");
-        }
-        out.println("  </tbody>");
-        out.println("</table>");
-    }
-
     private static void renderCallSitesTable(PrintStream out, Model m) {
         out.println("<table>");
         out.println("  <thead><tr>"
@@ -1799,28 +2035,139 @@ public final class HtmlReport {
         out.println("</table>");
     }
 
-    private static void renderTemplatesTable(PrintStream out, Model m) {
+    private static void renderTemplatesTable(PrintStream out, Model m,
+                                             Map<Integer, TemplateStats> stats) {
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Template</th>"
                 + "<th class=\"num\" data-default-sort=\"desc\" aria-sort=\"desc\">DB time</th>"
                 + "<th class=\"num\">Count</th>"
+                + "<th class=\"num\">p50</th>"
+                + "<th class=\"num\">p99</th>"
+                + "<th title=\"Per-template duration distribution. "
+                + "18 log2 buckets, &lt;1µs up to ≥65ms. "
+                + "Bar heights normalised within each row so a bimodal shape "
+                + "(cache hit vs miss) is visible regardless of total count.\""
+                + ">Distribution</th>"
                 + "<th class=\"num\">Call-sites</th>"
                 + "</tr></thead>");
         out.println("  <tbody>");
-        for (var entry : m.agg.topTemplates(Integer.MAX_VALUE)) {
+        // Use executeAgg, not agg: spec §9 calls Count "execution count",
+        // and PREPARE/NEXT/CLOSE noise here makes Count drift away from
+        // the histogram's sample total (which is execute-only by design).
+        for (var entry : m.executeAgg.topTemplates(Integer.MAX_VALUE)) {
             int sqlId = entry.getKey();
             Aggregator.Stats s = entry.getValue();
             int sites = m.stacksPerTemplate.getOrDefault(sqlId, Set.of()).size();
+            TemplateStats ts = stats.get(sqlId);
+            long p50 = ts == null ? 0L : ts.p50();
+            long p99 = ts == null ? 0L : ts.p99();
             out.println("    <tr>"
                     + tdSql(m, sqlId)
                     + tdDuration(s.totalDurationNanos())
                     + tdCount(s.count())
+                    + tdDuration(p50)
+                    + tdDuration(p99)
+                    + "<td>" + renderHistogram(ts) + "</td>"
                     + tdCount(sites)
                     + "</tr>");
         }
         out.println("  </tbody>");
         out.println("</table>");
+    }
+
+    /** Per-template execute-event statistics. Buckets are 18 log2-spaced
+     *  duration counts (see {@link #bucketIndex(long)}); p50/p99 are
+     *  computed from the same sample set. */
+    private record TemplateStats(long p50, long p99, int[] buckets) {
+        static final int BUCKET_COUNT = 18;
+    }
+
+    /**
+     * Bucket index for a duration in nanoseconds. Bucket 0 captures
+     * sub-microsecond outliers; buckets 1..16 each cover a doubling
+     * microsecond range starting at 1µs; bucket 17 absorbs anything
+     * ≥65.5ms. Doubling buckets (rather than linear) keep cache-fast
+     * and disk-slow events on the same chart at usable resolution.
+     */
+    private static int bucketIndex(long ns) {
+        if (ns < 1000L) return 0;
+        long us = ns / 1000L;
+        int b = 64 - Long.numberOfLeadingZeros(us);
+        if (b > TemplateStats.BUCKET_COUNT - 1) {
+            b = TemplateStats.BUCKET_COUNT - 1;
+        }
+        return b;
+    }
+
+    private static Map<Integer, TemplateStats> computeTemplateStats(Model m) {
+        // Scope: execute events only — PREPARE / NEXT / CLOSE would
+        // skew the duration distribution toward "free" no-ops. Boxed
+        // Long is fine here; analysis layer has no perf budget.
+        Map<Integer, List<Long>> raw = new HashMap<>();
+        byte queryCode = EventType.EXECUTE_QUERY.code();
+        byte updateCode = EventType.EXECUTE_UPDATE.code();
+        byte batchCode = EventType.EXECUTE_BATCH.code();
+        for (List<Event> evs : m.eventsByOp.values()) {
+            for (Event e : evs) {
+                if (e.sqlId < 0) continue;
+                byte c = e.eventType;
+                if (c != queryCode && c != updateCode && c != batchCode) continue;
+                raw.computeIfAbsent(e.sqlId, k -> new ArrayList<>())
+                        .add(Math.max(0L, e.durationNanos));
+            }
+        }
+        Map<Integer, TemplateStats> out = new HashMap<>();
+        for (Map.Entry<Integer, List<Long>> entry : raw.entrySet()) {
+            List<Long> ds = entry.getValue();
+            long[] arr = new long[ds.size()];
+            int[] buckets = new int[TemplateStats.BUCKET_COUNT];
+            for (int i = 0; i < arr.length; i++) {
+                long v = ds.get(i);
+                arr[i] = v;
+                buckets[bucketIndex(v)]++;
+            }
+            java.util.Arrays.sort(arr);
+            out.put(entry.getKey(), new TemplateStats(
+                    pickPercentile(arr, 0.50),
+                    pickPercentile(arr, 0.99),
+                    buckets));
+        }
+        return out;
+    }
+
+    private static long pickPercentile(long[] sorted, double p) {
+        if (sorted.length == 0) return 0L;
+        int idx = (int) Math.min(sorted.length - 1,
+                Math.max(0, Math.round(p * (sorted.length - 1))));
+        return sorted[idx];
+    }
+
+    private static String renderHistogram(TemplateStats ts) {
+        if (ts == null) {
+            return "<span class=\"muted\">—</span>";
+        }
+        int[] buckets = ts.buckets();
+        int max = 0;
+        long total = 0L;
+        for (int b : buckets) {
+            if (b > max) max = b;
+            total += b;
+        }
+        if (max == 0) {
+            return "<span class=\"muted\">—</span>";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("<span class=\"hist\" title=\"")
+                .append(total)
+                .append(" samples, log2 buckets &lt;1µs…1µs…2µs…"
+                        + "1ms…1s…≥65ms\">");
+        for (int b : buckets) {
+            int pct = (int) Math.round(100.0 * b / max);
+            sb.append("<span style=\"height:").append(pct).append("%\"></span>");
+        }
+        sb.append("</span>");
+        return sb.toString();
     }
 
     private static String tdSite(Model m, int stackId) {
@@ -1889,6 +2236,21 @@ public final class HtmlReport {
                   if (raw !== undefined) return isNum ? Number(raw) : raw;
                   return isNum ? Number(td.textContent.trim()) : td.textContent.trim();
                 }
+                // Open a <details> when its anchor is targeted, so TOC
+                // links land on a usable section. Firefox doesn't do
+                // this on its own; Chrome/Safari do but a no-op event
+                // listener is harmless there.
+                function openTargetedDetails() {
+                  const id = location.hash.replace(/^#/, '');
+                  if (!id) return;
+                  const el = document.getElementById(decodeURIComponent(id));
+                  if (el && el.tagName === 'DETAILS') {
+                    el.open = true;
+                    el.scrollIntoView({block: 'start'});
+                  }
+                }
+                window.addEventListener('hashchange', openTargetedDetails);
+                openTargetedDetails();
                 """);
         out.println("</script>");
         out.println("</body>");

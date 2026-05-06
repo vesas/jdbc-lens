@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="480" y="32" text-anchor="middle" font-size="18" font-weight="600" fill="#202124">End-to-end run — wall clock per full sample-app execution (lower is better)</text>
+  <rect x="90" y="60" width="14" height="14" rx="2" fill="#9aa0a6"/>
+  <text x="110" y="71" font-size="12" fill="#3c4043">no interceptor</text>
+  <rect x="290" y="60" width="14" height="14" rx="2" fill="#1a73e8"/>
+  <text x="310" y="71" font-size="12" fill="#3c4043">jdbc-prof (this library)</text>
+  <rect x="490" y="60" width="14" height="14" rx="2" fill="#f29900"/>
+  <text x="510" y="71" font-size="12" fill="#3c4043">P6Spy 3.9.1</text>
+  <line x1="90" y1="110" x2="920" y2="110" stroke="#e8eaed" stroke-width="1"/>
+  <text x="82" y="114" text-anchor="end" font-size="11" fill="#5f6368">5000 ms</text>
+  <line x1="90" y1="185" x2="920" y2="185" stroke="#e8eaed" stroke-width="1"/>
+  <text x="82" y="189" text-anchor="end" font-size="11" fill="#5f6368">3750 ms</text>
+  <line x1="90" y1="260" x2="920" y2="260" stroke="#e8eaed" stroke-width="1"/>
+  <text x="82" y="264" text-anchor="end" font-size="11" fill="#5f6368">2500 ms</text>
+  <line x1="90" y1="335" x2="920" y2="335" stroke="#e8eaed" stroke-width="1"/>
+  <text x="82" y="339" text-anchor="end" font-size="11" fill="#5f6368">1250 ms</text>
+  <line x1="90" y1="410" x2="920" y2="410" stroke="#e8eaed" stroke-width="1"/>
+  <text x="82" y="414" text-anchor="end" font-size="11" fill="#5f6368">0 ms</text>
+  <rect x="198" y="187" width="60" height="223" fill="#9aa0a6" rx="3"/>
+  <line x1="228" y1="186" x2="228" y2="188" stroke="#202124" stroke-width="1.5"/>
+  <line x1="220" y1="186" x2="236" y2="186" stroke="#202124" stroke-width="1.5"/>
+  <line x1="220" y1="188" x2="236" y2="188" stroke="#202124" stroke-width="1.5"/>
+  <text x="228" y="178" text-anchor="middle" font-size="11" fill="#3c4043">3711.5 ms</text>
+  <text x="228" y="440" text-anchor="middle" font-size="13" font-weight="500" fill="#202124">no profiler</text>
+  <rect x="474" y="179" width="60" height="231" fill="#1a73e8" rx="3"/>
+  <line x1="504" y1="178" x2="504" y2="180" stroke="#202124" stroke-width="1.5"/>
+  <line x1="496" y1="178" x2="512" y2="178" stroke="#202124" stroke-width="1.5"/>
+  <line x1="496" y1="180" x2="512" y2="180" stroke="#202124" stroke-width="1.5"/>
+  <text x="504" y="170" text-anchor="middle" font-size="11" fill="#3c4043">3845.8 ms</text>
+  <text x="504" y="440" text-anchor="middle" font-size="13" font-weight="500" fill="#202124">jdbc-prof</text>
+  <text x="504" y="464" text-anchor="middle" font-size="11" fill="#5f6368">+4% vs baseline</text>
+  <rect x="750" y="141" width="60" height="269" fill="#f29900" rx="3"/>
+  <line x1="780" y1="139" x2="780" y2="146" stroke="#202124" stroke-width="1.5"/>
+  <line x1="772" y1="139" x2="788" y2="139" stroke="#202124" stroke-width="1.5"/>
+  <line x1="772" y1="146" x2="788" y2="146" stroke="#202124" stroke-width="1.5"/>
+  <text x="780" y="131" text-anchor="middle" font-size="11" fill="#3c4043">4476.5 ms</text>
+  <text x="780" y="440" text-anchor="middle" font-size="13" font-weight="500" fill="#202124">P6Spy</text>
+  <text x="780" y="464" text-anchor="middle" font-size="11" fill="#5f6368">+21% vs baseline</text>
+</svg>

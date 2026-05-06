@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * a test method name) to a compact int id (spec §3, §10).
  *
  * <p>Same shape as {@link SqlInternTable} but exercised far less
- * often — applications call {@link Profiler#currentOperation(String)}
+ * often — applications call {@link fi.vesas.jdbcprof.Profiler#currentOperation(String)}
  * at operation boundaries, not per-query. So the
  * {@link ConcurrentHashMap} hit path is comfortable and the
  * synchronized miss path is acceptable.

@@ -65,7 +65,10 @@ final class CapturingResultSet implements ResultSet {
         long t0 = System.nanoTime();
         boolean hasRow = delegate.next();
         long t1 = System.nanoTime();
-        ctx.emit(NEXT, sqlId, t0, t1 - t0, -1, 0, 0L);
+        // NEXT: row-count + duration is what the analyzer needs; the
+        // call-site of an inner-loop next() doesn't add information
+        // beyond the executeQuery's. Skip the 30-frame walk.
+        ctx.emitNoTrace(NEXT, sqlId, t0, t1 - t0, -1, 0, 0L);
         return hasRow;
     }
 
@@ -79,7 +82,9 @@ final class CapturingResultSet implements ResultSet {
         long t0 = System.nanoTime();
         delegate.close();
         long t1 = System.nanoTime();
-        ctx.emit(CLOSE, sqlId, t0, t1 - t0, -1, 0, 0L);
+        // CLOSE: a lifetime-boundary marker. The report doesn't
+        // attribute against close call-sites, so the walk is wasted.
+        ctx.emitNoTrace(CLOSE, sqlId, t0, t1 - t0, -1, 0, 0L);
     }
 
     // --- everything below is straight delegation ---

@@ -1,7 +1,9 @@
 # jdbc-prof
 
 Records every JDBC query your app runs, attributes it to the call-site
-in your code, and produces an HTML report.
+in your code, and produces an HTML report. Results are grouped by
+call-site, by SQL template, and by their combination. The call-site
+view is what makes N+1 patterns and dominant call-sites easy to find.
 
 ## Try it in 30 seconds
 
@@ -10,7 +12,7 @@ the profiler:
 
 ```
 ./gradlew :sample-app:run
-./gradlew :analysis:run --args="sample-app/sample-recording.jdbclog -o sample-app/sample-report.html"
+./gradlew :analysis:run --args="analyze sample-app/sample-recording.jdbclog -o sample-app/sample-report.html"
 ```
 
 Open `sample-app/sample-report.html` in any browser. Look at
@@ -28,7 +30,7 @@ From the `jdbc-prof` repo:
 ./gradlew :core:publishToMavenLocal
 ```
 
-This installs `fi.vesas:jdbc-prof-core:0.1.0-SNAPSHOT` into
+This installs `fi.vesas:jdbc-prof-core:0.1.0` into
 `~/.m2/repository/`.
 
 ### 2. Depend on it from your project
@@ -42,7 +44,7 @@ repositories {
 }
 
 dependencies {
-    testImplementation("fi.vesas:jdbc-prof-core:0.1.0-SNAPSHOT")
+    testImplementation("fi.vesas:jdbc-prof-core:0.1.0")
 }
 ```
 
@@ -79,7 +81,7 @@ Every query that flows through `profiled` is recorded to
 From the `jdbc-prof` repo:
 
 ```
-./gradlew :analysis:run --args="/path/to/recording.jdbclog -o report.html"
+./gradlew :analysis:run --args="analyze /path/to/recording.jdbclog -o report.html"
 ```
 
 Open `report.html` in any browser. The file is self-contained — no
@@ -89,10 +91,12 @@ network calls, no external CSS or JS.
 
 - Event count, total database time, wall time.
 - Top call-sites by time.
+- N+1 detection: call-sites that issue the same query repeatedly within
+  a single logical operation are flagged.
 - Sortable tables: `(call-site, template)` pairs, call-sites alone,
   templates alone.
 
 ## Requirements
 
 - Java 21+
-- Gradle 8+
+- Gradle 8+ (the included `./gradlew` wrapper handles this automatically)

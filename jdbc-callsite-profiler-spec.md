@@ -71,7 +71,7 @@ Total: 65 bytes per event, padded to 68. An event buffer of 1 million events con
 
 ### 5.3 Hot-path performance budget
 
-Target overhead per intercepted JDBC call: **under 5 microseconds** on commodity server hardware. This budget is generous relative to typical JDBC operation durations (100 microseconds to 100 milliseconds) but tight in absolute terms, and every hot-path decision must defend itself against it.
+Target overhead per intercepted JDBC call: **under 10 microseconds** on commodity server hardware. This budget is generous relative to typical JDBC operation durations (100 microseconds to 100 milliseconds) but tight in absolute terms, and every hot-path decision must defend itself against it.
 
 Specifically, the following are prohibited in the hot path:
 

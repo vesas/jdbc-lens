@@ -15,10 +15,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * on first use per thread via the thread-local initializer; the
  * sink consumes from {@link #allRings()}.
  *
- * <p>The {@link ThreadLocal} holds only primitive object references,
- * so per-thread bookkeeping is cheap. Rings themselves are
- * pre-allocated at construction (slot arrays), so first-call on a
- * thread pays the allocation cost once and then amortises to zero.
+ * <p>Per-thread state — ring buffer, current operation id, current
+ * invocation id — lives in a single {@link ThreadState} object held
+ * in one {@link ThreadLocal}. The hot path's {@link #emit} therefore
+ * pays one {@code ThreadLocal.get()} per call, not three. Op/invocation
+ * ids are primitive {@code long} fields, so the
+ * {@link #setCurrentOperation} path doesn't allocate either.
  */
 public final class CaptureContext {
 
@@ -28,6 +30,33 @@ public final class CaptureContext {
     /** Sentinel stored in {@link Event#operationInvocationId} when no op is active. */
     public static final long NO_OPERATION_INVOCATION = -1L;
 
+    /**
+     * Sentinel stored in {@link Event#stackTraceId} when the emitting
+     * site asked us to skip the stack walk — used for events whose
+     * call-site is not what the analyzer attributes against (NEXT, the
+     * various CLOSE events). Walking 30 frames per emit dominates the
+     * hot-path cost, so the wrappers for those events use the
+     * {@link #emitNoTrace} overload to skip it.
+     */
+    public static final int NO_STACK_TRACE = -1;
+
+    /**
+     * Number of bottom-of-stack frames {@link StackTraceInternTable} is
+     * told to drop on every walk. Three matches the depth of dispatch
+     * frames between the {@code WALKER.walk(...)} site and the user's
+     * code on the most direct emit path
+     * ({@code wrapper.executeQuery → CaptureContext.emit(8-arg)
+     * → StackTraceInternTable.internCurrent}). Paths that go through
+     * an extra layer (e.g. {@code resolveSqlId}, the 7-arg
+     * {@code emit} overload) leave one or two of our own frames at
+     * the bottom of the snapshot — harmless, since
+     * {@link fi.vesas.jdbcprof.analysis.Attribution Attribution}
+     * filters them out by package prefix at report time. Picking a
+     * larger number to cover those longer paths would risk eating into
+     * application code on the shortest path.
+     */
+    private static final int INFRA_FRAMES_TO_SKIP = 3;
+
     private final SqlInternTable sqlIntern = new SqlInternTable();
     private final StackTraceInternTable stackIntern;
     private final OperationInternTable opIntern = new OperationInternTable();
@@ -36,22 +65,31 @@ public final class CaptureContext {
 
     private final int ringCapacity;
     private final CopyOnWriteArrayList<SpscRingBuffer> allRings = new CopyOnWriteArrayList<>();
-    private final ThreadLocal<SpscRingBuffer> threadRing;
-    // Long boxing here is fine — set rarely (once per operation
-    // boundary, not per query) so the per-emit read below only pays a
-    // Long.longValue call that the JIT strips. Initial value -1 mirrors
-    // NO_OPERATION.
-    private final ThreadLocal<Long> currentOperation = ThreadLocal.withInitial(() -> NO_OPERATION);
-    // Per-thread current invocation id. Bumped off `invocationCounter`
-    // each time setCurrentOperation() is called with a non-null name,
-    // so repeated invocations of the same op name are distinguishable
-    // in the event stream.
-    private final ThreadLocal<Long> currentInvocation =
-            ThreadLocal.withInitial(() -> NO_OPERATION_INVOCATION);
+    private final ThreadLocal<ThreadState> threadState;
     // Session-global monotonic source for invocation ids. Single
     // AtomicLong is adequate: contention only at op boundaries, not
     // per-query, and the wrapping cost is paid once per operation.
     private final AtomicLong invocationCounter = new AtomicLong(0L);
+
+    /**
+     * Per-thread mutable bag: the ring buffer (final, registered once
+     * at first use), the cached thread id (final, captured once at
+     * construction), plus the current operation/invocation ids
+     * (primitive longs, written only by the owning thread via
+     * {@link #setCurrentOperation}). No synchronisation: every
+     * mutation is on the same thread that reads it.
+     */
+    private static final class ThreadState {
+        final SpscRingBuffer ring;
+        final int threadId;
+        long operationId = NO_OPERATION;
+        long invocationId = NO_OPERATION_INVOCATION;
+
+        ThreadState(SpscRingBuffer ring) {
+            this.ring = ring;
+            this.threadId = (int) Thread.currentThread().threadId();
+        }
+    }
 
     public CaptureContext(int ringCapacity, int stackDepthLimit) {
         this(ringCapacity, stackDepthLimit, false);
@@ -60,21 +98,21 @@ public final class CaptureContext {
     public CaptureContext(int ringCapacity, int stackDepthLimit, boolean captureParameterValues) {
         this.ringCapacity = ringCapacity;
         this.captureParameterValues = captureParameterValues;
-        this.stackIntern = new StackTraceInternTable(stackDepthLimit);
-        // Capture the parameter (effectively final) rather than this.ringCapacity
-        // so the field's definite-assignment check is satisfied and the lambda
-        // doesn't re-read a field that Java memory semantics need no help with.
+        this.stackIntern = new StackTraceInternTable(stackDepthLimit, INFRA_FRAMES_TO_SKIP);
+        // Capture the parameters as effectively final locals so the
+        // initializer lambda doesn't re-read instance fields it has no
+        // ordering guarantees about.
         final int capacity = ringCapacity;
         final CopyOnWriteArrayList<SpscRingBuffer> rings = allRings;
-        this.threadRing = ThreadLocal.withInitial(() -> {
+        this.threadState = ThreadLocal.withInitial(() -> {
             SpscRingBuffer r = new SpscRingBuffer(capacity);
             rings.add(r);
-            return r;
+            return new ThreadState(r);
         });
     }
 
     public SpscRingBuffer currentRing() {
-        return threadRing.get();
+        return threadState.get().ring;
     }
 
     public SqlInternTable sqlIntern() {
@@ -102,24 +140,25 @@ public final class CaptureContext {
      * (future events will carry {@link #NO_OPERATION}).
      */
     public void setCurrentOperation(String name) {
+        ThreadState ts = threadState.get();
         if (name == null) {
-            currentOperation.set(NO_OPERATION);
-            currentInvocation.set(NO_OPERATION_INVOCATION);
+            ts.operationId = NO_OPERATION;
+            ts.invocationId = NO_OPERATION_INVOCATION;
             return;
         }
         int id = opIntern.intern(name);
-        currentOperation.set((long) id);
-        currentInvocation.set(invocationCounter.incrementAndGet());
+        ts.operationId = id;
+        ts.invocationId = invocationCounter.incrementAndGet();
     }
 
     /** The current thread's invocation id, or {@link #NO_OPERATION_INVOCATION} if none. */
     public long currentInvocationId() {
-        return currentInvocation.get();
+        return threadState.get().invocationId;
     }
 
     /** The current thread's operation id, or {@link #NO_OPERATION} if none. */
     public long currentOperationId() {
-        return currentOperation.get();
+        return threadState.get().operationId;
     }
 
     /**
@@ -154,19 +193,49 @@ public final class CaptureContext {
                      int rowsAffected, int batchSize,
                      long parameterFingerprint,
                      int parameterValuesId) {
-        SpscRingBuffer ring = threadRing.get();
+        emit(eventType, sqlId, startNanos, durationNanos,
+                rowsAffected, batchSize, parameterFingerprint,
+                parameterValuesId, stackIntern.internCurrent());
+    }
+
+    /**
+     * Emit variant that takes the {@code stackTraceId} as a precomputed
+     * argument instead of calling {@link StackTraceInternTable#internCurrent}.
+     * Pass {@link #NO_STACK_TRACE} to record an event without a stack —
+     * appropriate for NEXT and CLOSE events, whose call-sites the
+     * analyzer does not attribute against. Skipping the 30-frame walk
+     * for these is the largest single hot-path saving available
+     * without changing the data model.
+     */
+    public void emitNoTrace(byte eventType, int sqlId,
+                            long startNanos, long durationNanos,
+                            int rowsAffected, int batchSize,
+                            long parameterFingerprint) {
+        emit(eventType, sqlId, startNanos, durationNanos,
+                rowsAffected, batchSize, parameterFingerprint,
+                -1, NO_STACK_TRACE);
+    }
+
+    private void emit(byte eventType, int sqlId,
+                      long startNanos, long durationNanos,
+                      int rowsAffected, int batchSize,
+                      long parameterFingerprint,
+                      int parameterValuesId,
+                      int stackTraceId) {
+        ThreadState ts = threadState.get();
+        SpscRingBuffer ring = ts.ring;
         Event e = ring.claim();
         if (e == null) {
             ring.recordDrop();
             return;
         }
         e.timestampNanos = startNanos;
-        e.threadId = (int) Thread.currentThread().getId();
-        e.operationId = currentOperation.get();
-        e.operationInvocationId = currentInvocation.get();
+        e.threadId = ts.threadId;
+        e.operationId = ts.operationId;
+        e.operationInvocationId = ts.invocationId;
         e.eventType = eventType;
         e.sqlId = sqlId;
-        e.stackTraceId = stackIntern.internCurrent();
+        e.stackTraceId = stackTraceId;
         e.durationNanos = durationNanos;
         e.rowsAffected = rowsAffected;
         e.batchSize = batchSize;

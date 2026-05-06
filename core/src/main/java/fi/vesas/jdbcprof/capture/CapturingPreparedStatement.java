@@ -43,6 +43,14 @@ import java.util.function.Supplier;
  * {@code parameterFingerprint} attached to the event — the analysis
  * layer uses this to distinguish "50 calls, 50 different params"
  * (N+1) from "50 calls, same params" (redundant query).
+ *
+ * <p>Hot-path note: setters branch on {@link #captureValuesActive}
+ * before computing display strings. With value capture off (the
+ * default), {@code Integer.toString(x)} / {@code Long.toString(x)} /
+ * {@code String.valueOf(x)} would otherwise be evaluated as setter
+ * arguments and immediately discarded — one allocation per JDBC call,
+ * for nothing. The branch keeps the fingerprint update path
+ * allocation-free in the default configuration.
  */
 final class CapturingPreparedStatement extends CapturingStatement implements PreparedStatement {
 
@@ -121,6 +129,16 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
         return id;
     }
 
+    /**
+     * True iff a profiler session is live and has opted in to keeping
+     * display strings for parameter values. Read once per setter call
+     * so the toString allocation only happens when capture is on.
+     */
+    private boolean captureValuesActive() {
+        CaptureContext ctx = ctxSupplier.get();
+        return ctx != null && ctx.captureParameterValues();
+    }
+
     private void setSlot(int parameterIndex, long tag, long valueHash) {
         // Parameter indices are 1-based in JDBC. Keep the array
         // 1-based too so lookups don't need to shift.
@@ -138,14 +156,13 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
         }
     }
 
-    private void setSlot(int parameterIndex, long tag, long valueHash, String display) {
+    /**
+     * Variant that also stores a display string for the value. Only
+     * call this when {@link #captureValuesActive} is true — the
+     * display argument is otherwise wasted work.
+     */
+    private void setSlotAndDisplay(int parameterIndex, long tag, long valueHash, String display) {
         setSlot(parameterIndex, tag, valueHash);
-        // Only keep the display string when some live session asks for it.
-        // With no session, or a session that didn't opt in, skip the store.
-        CaptureContext ctx = ctxSupplier.get();
-        if (ctx == null || !ctx.captureParameterValues()) {
-            return;
-        }
         if (paramValues == null || parameterIndex >= paramValues.length) {
             int newLen = Math.max(parameterIndex + 1, paramValues == null ? 4 : paramValues.length * 2);
             String[] bigger = new String[newLen];
@@ -311,124 +328,272 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
     }
 
     @Override public void setNull(int parameterIndex, int sqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_NULL, sqlType, "null");
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NULL, sqlType, "null");
+        } else {
+            setSlot(parameterIndex, TAG_NULL, sqlType);
+        }
         ps.setNull(parameterIndex, sqlType);
     }
     @Override public void setNull(int parameterIndex, int sqlType, String typeName) throws SQLException {
-        setSlot(parameterIndex, TAG_NULL, sqlType ^ (typeName == null ? 0L : typeName.hashCode()), "null");
+        long hash = sqlType ^ (typeName == null ? 0L : typeName.hashCode());
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NULL, hash, "null");
+        } else {
+            setSlot(parameterIndex, TAG_NULL, hash);
+        }
         ps.setNull(parameterIndex, sqlType, typeName);
     }
     @Override public void setBoolean(int parameterIndex, boolean x) throws SQLException {
-        setSlot(parameterIndex, TAG_BOOLEAN, x ? 1L : 0L, Boolean.toString(x));
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BOOLEAN, x ? 1L : 0L, Boolean.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_BOOLEAN, x ? 1L : 0L);
+        }
         ps.setBoolean(parameterIndex, x);
     }
     @Override public void setByte(int parameterIndex, byte x) throws SQLException {
-        setSlot(parameterIndex, TAG_BYTE, x, Byte.toString(x));
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BYTE, x, Byte.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_BYTE, x);
+        }
         ps.setByte(parameterIndex, x);
     }
     @Override public void setShort(int parameterIndex, short x) throws SQLException {
-        setSlot(parameterIndex, TAG_SHORT, x, Short.toString(x));
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_SHORT, x, Short.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_SHORT, x);
+        }
         ps.setShort(parameterIndex, x);
     }
     @Override public void setInt(int parameterIndex, int x) throws SQLException {
-        setSlot(parameterIndex, TAG_INT, x, Integer.toString(x));
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_INT, x, Integer.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_INT, x);
+        }
         ps.setInt(parameterIndex, x);
     }
     @Override public void setLong(int parameterIndex, long x) throws SQLException {
-        setSlot(parameterIndex, TAG_LONG, x, Long.toString(x));
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_LONG, x, Long.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_LONG, x);
+        }
         ps.setLong(parameterIndex, x);
     }
     @Override public void setFloat(int parameterIndex, float x) throws SQLException {
-        setSlot(parameterIndex, TAG_FLOAT, Float.floatToIntBits(x), Float.toString(x));
+        long hash = Float.floatToIntBits(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_FLOAT, hash, Float.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_FLOAT, hash);
+        }
         ps.setFloat(parameterIndex, x);
     }
     @Override public void setDouble(int parameterIndex, double x) throws SQLException {
-        setSlot(parameterIndex, TAG_DOUBLE, Double.doubleToLongBits(x), Double.toString(x));
+        long hash = Double.doubleToLongBits(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_DOUBLE, hash, Double.toString(x));
+        } else {
+            setSlot(parameterIndex, TAG_DOUBLE, hash);
+        }
         ps.setDouble(parameterIndex, x);
     }
     @Override public void setBigDecimal(int parameterIndex, BigDecimal x) throws SQLException {
-        setSlot(parameterIndex, TAG_BIGDECIMAL, Objects.hashCode(x), String.valueOf(x));
+        long hash = Objects.hashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BIGDECIMAL, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_BIGDECIMAL, hash);
+        }
         ps.setBigDecimal(parameterIndex, x);
     }
     @Override public void setString(int parameterIndex, String x) throws SQLException {
-        setSlot(parameterIndex, TAG_STRING, Objects.hashCode(x), String.valueOf(x));
+        long hash = Objects.hashCode(x);
+        if (captureValuesActive()) {
+            // String.valueOf(x) returns x itself when x != null and the
+            // four-character literal "null" otherwise — no allocation
+            // in the common path. Still cheaper to gate, since the
+            // hashCode lookup is also wasted when capture is off.
+            setSlotAndDisplay(parameterIndex, TAG_STRING, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_STRING, hash);
+        }
         ps.setString(parameterIndex, x);
     }
     @Override public void setBytes(int parameterIndex, byte[] x) throws SQLException {
-        setSlot(parameterIndex, TAG_BYTES, x == null ? 0L : Arrays.hashCode(x), bytesDisplay(x));
+        long hash = x == null ? 0L : Arrays.hashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BYTES, hash, bytesDisplay(x));
+        } else {
+            setSlot(parameterIndex, TAG_BYTES, hash);
+        }
         ps.setBytes(parameterIndex, x);
     }
     @Override public void setDate(int parameterIndex, Date x) throws SQLException {
-        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_DATE, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_DATE, hash);
+        }
         ps.setDate(parameterIndex, x);
     }
     @Override public void setDate(int parameterIndex, Date x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_DATE, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_DATE, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_DATE, hash);
+        }
         ps.setDate(parameterIndex, x, cal);
     }
     @Override public void setTime(int parameterIndex, Time x) throws SQLException {
-        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_TIME, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_TIME, hash);
+        }
         ps.setTime(parameterIndex, x);
     }
     @Override public void setTime(int parameterIndex, Time x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_TIME, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_TIME, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_TIME, hash);
+        }
         ps.setTime(parameterIndex, x, cal);
     }
     @Override public void setTimestamp(int parameterIndex, Timestamp x) throws SQLException {
-        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_TIMESTAMP, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_TIMESTAMP, hash);
+        }
         ps.setTimestamp(parameterIndex, x);
     }
     @Override public void setTimestamp(int parameterIndex, Timestamp x, Calendar cal) throws SQLException {
-        setSlot(parameterIndex, TAG_TIMESTAMP, x == null ? 0L : x.getTime(), String.valueOf(x));
+        long hash = x == null ? 0L : x.getTime();
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_TIMESTAMP, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_TIMESTAMP, hash);
+        }
         ps.setTimestamp(parameterIndex, x, cal);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
+        long hash = System.identityHashCode(x) ^ (long) length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setAsciiStream(parameterIndex, x, length);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length, "<InputStream>");
+        long hash = System.identityHashCode(x) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setAsciiStream(parameterIndex, x, length);
     }
     @Override public void setAsciiStream(int parameterIndex, InputStream x) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x), "<InputStream>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setAsciiStream(parameterIndex, x);
     }
     @Override @SuppressWarnings("deprecation")
     public void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
+        long hash = System.identityHashCode(x) ^ (long) length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setUnicodeStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ (long) length, "<InputStream>");
+        long hash = System.identityHashCode(x) ^ (long) length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setBinaryStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x) ^ length, "<InputStream>");
+        long hash = System.identityHashCode(x) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setBinaryStream(parameterIndex, x, length);
     }
     @Override public void setBinaryStream(int parameterIndex, InputStream x) throws SQLException {
-        setSlot(parameterIndex, TAG_STREAM, System.identityHashCode(x), "<InputStream>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_STREAM, hash, "<InputStream>");
+        } else {
+            setSlot(parameterIndex, TAG_STREAM, hash);
+        }
         ps.setBinaryStream(parameterIndex, x);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader, int length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ (long) length, "<Reader>");
+        long hash = System.identityHashCode(reader) ^ (long) length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_READER, hash, "<Reader>");
+        } else {
+            setSlot(parameterIndex, TAG_READER, hash);
+        }
         ps.setCharacterStream(parameterIndex, reader, length);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader) ^ length, "<Reader>");
+        long hash = System.identityHashCode(reader) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_READER, hash, "<Reader>");
+        } else {
+            setSlot(parameterIndex, TAG_READER, hash);
+        }
         ps.setCharacterStream(parameterIndex, reader, length);
     }
     @Override public void setCharacterStream(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(reader), "<Reader>");
+        long hash = System.identityHashCode(reader);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_READER, hash, "<Reader>");
+        } else {
+            setSlot(parameterIndex, TAG_READER, hash);
+        }
         ps.setCharacterStream(parameterIndex, reader);
     }
     @Override public void setNCharacterStream(int parameterIndex, Reader value, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value) ^ length, "<Reader>");
+        long hash = System.identityHashCode(value) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_READER, hash, "<Reader>");
+        } else {
+            setSlot(parameterIndex, TAG_READER, hash);
+        }
         ps.setNCharacterStream(parameterIndex, value, length);
     }
     @Override public void setNCharacterStream(int parameterIndex, Reader value) throws SQLException {
-        setSlot(parameterIndex, TAG_READER, System.identityHashCode(value), "<Reader>");
+        long hash = System.identityHashCode(value);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_READER, hash, "<Reader>");
+        } else {
+            setSlot(parameterIndex, TAG_READER, hash);
+        }
         ps.setNCharacterStream(parameterIndex, value);
     }
     @Override public void clearParameters() throws SQLException {
@@ -442,88 +607,183 @@ final class CapturingPreparedStatement extends CapturingStatement implements Pre
         ps.clearParameters();
     }
     @Override public void setObject(int parameterIndex, Object x, int targetSqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ (long) targetSqlType, String.valueOf(x));
+        long hash = Objects.hashCode(x) ^ (long) targetSqlType;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_OBJECT, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_OBJECT, hash);
+        }
         ps.setObject(parameterIndex, x, targetSqlType);
     }
     @Override public void setObject(int parameterIndex, Object x) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x), String.valueOf(x));
+        long hash = Objects.hashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_OBJECT, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_OBJECT, hash);
+        }
         ps.setObject(parameterIndex, x);
     }
     @Override public void setObject(int parameterIndex, Object x, int targetSqlType, int scaleOrLength) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT,
-                Objects.hashCode(x) ^ ((long) targetSqlType << 32) ^ scaleOrLength,
-                String.valueOf(x));
+        long hash = Objects.hashCode(x) ^ ((long) targetSqlType << 32) ^ scaleOrLength;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_OBJECT, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_OBJECT, hash);
+        }
         ps.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
     }
     @Override public void setObject(int parameterIndex, Object x, SQLType targetSqlType, int scaleOrLength) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT,
-                Objects.hashCode(x) ^ Objects.hashCode(targetSqlType) ^ scaleOrLength,
-                String.valueOf(x));
+        long hash = Objects.hashCode(x) ^ Objects.hashCode(targetSqlType) ^ scaleOrLength;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_OBJECT, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_OBJECT, hash);
+        }
         ps.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
     }
     @Override public void setObject(int parameterIndex, Object x, SQLType targetSqlType) throws SQLException {
-        setSlot(parameterIndex, TAG_OBJECT, Objects.hashCode(x) ^ Objects.hashCode(targetSqlType),
-                String.valueOf(x));
+        long hash = Objects.hashCode(x) ^ Objects.hashCode(targetSqlType);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_OBJECT, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_OBJECT, hash);
+        }
         ps.setObject(parameterIndex, x, targetSqlType);
     }
     @Override public void setRef(int parameterIndex, Ref x) throws SQLException {
-        setSlot(parameterIndex, TAG_REF, System.identityHashCode(x), "<Ref>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_REF, hash, "<Ref>");
+        } else {
+            setSlot(parameterIndex, TAG_REF, hash);
+        }
         ps.setRef(parameterIndex, x);
     }
     @Override public void setBlob(int parameterIndex, Blob x) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(x), "<Blob>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BLOB, hash, "<Blob>");
+        } else {
+            setSlot(parameterIndex, TAG_BLOB, hash);
+        }
         ps.setBlob(parameterIndex, x);
     }
     @Override public void setBlob(int parameterIndex, InputStream inputStream, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream) ^ length, "<Blob>");
+        long hash = System.identityHashCode(inputStream) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BLOB, hash, "<Blob>");
+        } else {
+            setSlot(parameterIndex, TAG_BLOB, hash);
+        }
         ps.setBlob(parameterIndex, inputStream, length);
     }
     @Override public void setBlob(int parameterIndex, InputStream inputStream) throws SQLException {
-        setSlot(parameterIndex, TAG_BLOB, System.identityHashCode(inputStream), "<Blob>");
+        long hash = System.identityHashCode(inputStream);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_BLOB, hash, "<Blob>");
+        } else {
+            setSlot(parameterIndex, TAG_BLOB, hash);
+        }
         ps.setBlob(parameterIndex, inputStream);
     }
     @Override public void setClob(int parameterIndex, Clob x) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(x), "<Clob>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_CLOB, hash, "<Clob>");
+        } else {
+            setSlot(parameterIndex, TAG_CLOB, hash);
+        }
         ps.setClob(parameterIndex, x);
     }
     @Override public void setClob(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader) ^ length, "<Clob>");
+        long hash = System.identityHashCode(reader) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_CLOB, hash, "<Clob>");
+        } else {
+            setSlot(parameterIndex, TAG_CLOB, hash);
+        }
         ps.setClob(parameterIndex, reader, length);
     }
     @Override public void setClob(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_CLOB, System.identityHashCode(reader), "<Clob>");
+        long hash = System.identityHashCode(reader);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_CLOB, hash, "<Clob>");
+        } else {
+            setSlot(parameterIndex, TAG_CLOB, hash);
+        }
         ps.setClob(parameterIndex, reader);
     }
     @Override public void setNClob(int parameterIndex, NClob value) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(value), "<NClob>");
+        long hash = System.identityHashCode(value);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NCLOB, hash, "<NClob>");
+        } else {
+            setSlot(parameterIndex, TAG_NCLOB, hash);
+        }
         ps.setNClob(parameterIndex, value);
     }
     @Override public void setNClob(int parameterIndex, Reader reader, long length) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader) ^ length, "<NClob>");
+        long hash = System.identityHashCode(reader) ^ length;
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NCLOB, hash, "<NClob>");
+        } else {
+            setSlot(parameterIndex, TAG_NCLOB, hash);
+        }
         ps.setNClob(parameterIndex, reader, length);
     }
     @Override public void setNClob(int parameterIndex, Reader reader) throws SQLException {
-        setSlot(parameterIndex, TAG_NCLOB, System.identityHashCode(reader), "<NClob>");
+        long hash = System.identityHashCode(reader);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NCLOB, hash, "<NClob>");
+        } else {
+            setSlot(parameterIndex, TAG_NCLOB, hash);
+        }
         ps.setNClob(parameterIndex, reader);
     }
     @Override public void setArray(int parameterIndex, Array x) throws SQLException {
-        setSlot(parameterIndex, TAG_ARRAY, System.identityHashCode(x), "<Array>");
+        long hash = System.identityHashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_ARRAY, hash, "<Array>");
+        } else {
+            setSlot(parameterIndex, TAG_ARRAY, hash);
+        }
         ps.setArray(parameterIndex, x);
     }
     @Override public void setURL(int parameterIndex, URL x) throws SQLException {
-        setSlot(parameterIndex, TAG_URL, Objects.hashCode(x), String.valueOf(x));
+        long hash = Objects.hashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_URL, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_URL, hash);
+        }
         ps.setURL(parameterIndex, x);
     }
     @Override public void setRowId(int parameterIndex, RowId x) throws SQLException {
-        setSlot(parameterIndex, TAG_ROWID, Objects.hashCode(x), String.valueOf(x));
+        long hash = Objects.hashCode(x);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_ROWID, hash, String.valueOf(x));
+        } else {
+            setSlot(parameterIndex, TAG_ROWID, hash);
+        }
         ps.setRowId(parameterIndex, x);
     }
     @Override public void setNString(int parameterIndex, String value) throws SQLException {
-        setSlot(parameterIndex, TAG_NSTRING, Objects.hashCode(value), String.valueOf(value));
+        long hash = Objects.hashCode(value);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_NSTRING, hash, String.valueOf(value));
+        } else {
+            setSlot(parameterIndex, TAG_NSTRING, hash);
+        }
         ps.setNString(parameterIndex, value);
     }
     @Override public void setSQLXML(int parameterIndex, SQLXML xmlObject) throws SQLException {
-        setSlot(parameterIndex, TAG_SQLXML, System.identityHashCode(xmlObject), "<SQLXML>");
+        long hash = System.identityHashCode(xmlObject);
+        if (captureValuesActive()) {
+            setSlotAndDisplay(parameterIndex, TAG_SQLXML, hash, "<SQLXML>");
+        } else {
+            setSlot(parameterIndex, TAG_SQLXML, hash);
+        }
         ps.setSQLXML(parameterIndex, xmlObject);
     }
 

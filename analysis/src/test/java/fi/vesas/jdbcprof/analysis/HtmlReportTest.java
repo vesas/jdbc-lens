@@ -39,7 +39,6 @@ class HtmlReportTest {
                     .contains("<script>")
                     .contains("jdbc-prof report")
                     .contains("Top call-sites by DB time")
-                    .contains("(Call-site, template) pairs")
                     .contains("<summary>Call-sites</summary>")
                     .contains("<summary>Templates</summary>")
                     .contains("com.example.OrderDao.findById:47")
@@ -167,9 +166,9 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int sectionStart = html.indexOf(">N+1 findings<");
+            int sectionStart = html.indexOf("<summary>N+1 findings</summary>");
             assertThat(sectionStart).as("N+1 section must exist").isGreaterThanOrEqualTo(0);
-            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
             if (sectionEnd < 0) {
                 sectionEnd = html.length();
             }
@@ -222,8 +221,8 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int sectionStart = html.indexOf(">N+1 findings<");
-            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            int sectionStart = html.indexOf("<summary>N+1 findings</summary>");
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
             if (sectionEnd < 0) {
                 sectionEnd = html.length();
             }
@@ -269,9 +268,9 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int sectionStart = html.indexOf(">Redundant queries<");
+            int sectionStart = html.indexOf(">Repeated queries with identical parameters<");
             assertThat(sectionStart).isGreaterThanOrEqualTo(0);
-            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
             if (sectionEnd < 0) {
                 sectionEnd = html.length();
             }
@@ -387,11 +386,11 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int redundantHeader = html.indexOf(">Redundant queries<");
+            int redundantHeader = html.indexOf(">Repeated queries with identical parameters<");
             assertThat(redundantHeader)
                     .as("redundant queries section should exist")
                     .isGreaterThanOrEqualTo(0);
-            int nextSectionAt = html.indexOf("<details class=\"section\">",
+            int nextSectionAt = html.indexOf("<details class=\"section\"",
                     redundantHeader + 1);
             if (nextSectionAt < 0) {
                 nextSectionAt = html.length();
@@ -475,20 +474,20 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int sectionStart = html.indexOf(">Emulated cursors (COBOL READ NEXT)<");
+            int sectionStart = html.indexOf("<summary>Walk-and-fetch loops</summary>");
             assertThat(sectionStart)
-                    .as("Emulated cursors section must exist")
+                    .as("Walk-and-fetch section must exist")
                     .isGreaterThanOrEqualTo(0);
-            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
             if (sectionEnd < 0) {
                 sectionEnd = html.length();
             }
             String section = html.substring(sectionStart, sectionEnd);
 
             assertThat(section)
-                    .as("lede must name the transpile shape so readers can place it")
-                    .contains("COBOL")
-                    .contains("READ NEXT");
+                    .as("lede must name the row-at-a-time shape so readers can place it")
+                    .contains("walk")
+                    .contains("row-at-a-time");
             assertThat(section)
                     .as("at least one card must carry the nested badge for the orders pair")
                     .contains(">nested<");
@@ -561,36 +560,43 @@ class HtmlReportTest {
             }
             String html = bytes.toString(StandardCharsets.UTF_8);
 
-            int sectionStart = html.indexOf(">Transactions<");
-            assertThat(sectionStart)
+            int txSectionStart = html.indexOf("<summary>Transactions</summary>");
+            assertThat(txSectionStart)
                     .as("Transactions section must exist")
                     .isGreaterThanOrEqualTo(0);
-            int sectionEnd = html.indexOf("<details class=\"section\">", sectionStart + 1);
-            if (sectionEnd < 0) {
-                sectionEnd = html.length();
+            int txSectionEnd = html.indexOf("<details class=\"section\"", txSectionStart + 1);
+            if (txSectionEnd < 0) {
+                txSectionEnd = html.length();
             }
-            String section = html.substring(sectionStart, sectionEnd);
+            String txSection = html.substring(txSectionStart, txSectionEnd);
 
-            assertThat(section)
+            assertThat(txSection)
                     .as("overview must show the explicit-TX count")
                     .contains("explicit transactions")
                     .contains(">15<");
-            assertThat(section)
-                    .as("commit-per-record finding must appear")
-                    .contains("Commit-per-record runs");
-            assertThat(section)
-                    .as("finding card must name the outer method as common ancestor")
-                    .contains("CustomerMasterBatchJob.run:43");
-            assertThat(section)
-                    .as("card must link to the inner call-site of the loop body")
-                    .contains("rewriteMasterRecord");
-            assertThat(section)
-                    .as("suggestion must recommend widening the TX boundary")
-                    .contains("Widen the transaction boundary");
-            assertThat(section)
+            assertThat(txSection)
                     .as("longest-transactions table must list TXs from this workload")
                     .contains("Longest transactions")
                     .contains("customer-master-batch");
+
+            int cprStart = html.indexOf("<summary>Commit-per-record runs</summary>");
+            assertThat(cprStart)
+                    .as("Commit-per-record runs section must exist")
+                    .isGreaterThanOrEqualTo(0);
+            int cprEnd = html.indexOf("<details class=\"section\"", cprStart + 1);
+            if (cprEnd < 0) {
+                cprEnd = html.length();
+            }
+            String cprSection = html.substring(cprStart, cprEnd);
+            assertThat(cprSection)
+                    .as("finding card must name the outer method as common ancestor")
+                    .contains("CustomerMasterBatchJob.run:43");
+            assertThat(cprSection)
+                    .as("card must link to the inner call-site of the loop body")
+                    .contains("rewriteMasterRecord");
+            assertThat(cprSection)
+                    .as("suggestion must recommend widening the TX boundary")
+                    .contains("Widen the transaction boundary");
         } finally {
             Files.deleteIfExists(tmp);
         }

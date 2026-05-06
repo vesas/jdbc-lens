@@ -100,7 +100,6 @@ class CapturingPreparedStatementTest {
      * its parameter verbatim. Returns the parameterFingerprint of each
      * EXECUTE_QUERY event in the resulting recording, in order.
      */
-    @SafeVarargs
     private static List<Long> recordExecutes(Path tmp, String file, PsAction... actions) throws Exception {
         Path log = tmp.resolve(file);
         Profiler.start(ProfilerConfig.defaults(log));

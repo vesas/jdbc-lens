@@ -1,0 +1,13 @@
+{
+  "results": [
+    {"scenario":"point-read","mode":"NONE","iterations":5000,"repeats":5,"meanNanosPerOp":4884.960,"p50NanosPerOp":5005.980,"p95NanosPerOp":5532.720,"p99NanosPerOp":5532.720,"meanThroughputOpsPerSec":204709.967},
+    {"scenario":"point-read","mode":"JDBCPROF","iterations":5000,"repeats":5,"meanNanosPerOp":22394.948,"p50NanosPerOp":21878.680,"p95NanosPerOp":25101.880,"p99NanosPerOp":25101.880,"meanThroughputOpsPerSec":44652.928},
+    {"scenario":"point-read","mode":"P6SPY","iterations":5000,"repeats":5,"meanNanosPerOp":82503.036,"p50NanosPerOp":83735.300,"p95NanosPerOp":83951.540,"p99NanosPerOp":83951.540,"meanThroughputOpsPerSec":12120.766},
+    {"scenario":"insert","mode":"NONE","iterations":5000,"repeats":5,"meanNanosPerOp":5842.900,"p50NanosPerOp":5804.280,"p95NanosPerOp":6772.680,"p99NanosPerOp":6772.680,"meanThroughputOpsPerSec":171147.889},
+    {"scenario":"insert","mode":"JDBCPROF","iterations":5000,"repeats":5,"meanNanosPerOp":23465.044,"p50NanosPerOp":23108.560,"p95NanosPerOp":24226.220,"p99NanosPerOp":24226.220,"meanThroughputOpsPerSec":42616.583},
+    {"scenario":"insert","mode":"P6SPY","iterations":5000,"repeats":5,"meanNanosPerOp":82348.284,"p50NanosPerOp":81406.300,"p95NanosPerOp":86295.360,"p99NanosPerOp":86295.360,"meanThroughputOpsPerSec":12143.544},
+    {"scenario":"mixed-read-write","mode":"NONE","iterations":5000,"repeats":5,"meanNanosPerOp":2133.810,"p50NanosPerOp":2096.640,"p95NanosPerOp":2313.390,"p99NanosPerOp":2313.390,"meanThroughputOpsPerSec":468645.287},
+    {"scenario":"mixed-read-write","mode":"JDBCPROF","iterations":5000,"repeats":5,"meanNanosPerOp":11939.864,"p50NanosPerOp":11697.080,"p95NanosPerOp":12675.390,"p99NanosPerOp":12675.390,"meanThroughputOpsPerSec":83753.048},
+    {"scenario":"mixed-read-write","mode":"P6SPY","iterations":5000,"repeats":5,"meanNanosPerOp":77742.758,"p50NanosPerOp":77627.490,"p95NanosPerOp":79535.390,"p99NanosPerOp":79535.390,"meanThroughputOpsPerSec":12862.934}
+  ]
+}

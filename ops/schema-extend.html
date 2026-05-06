@@ -91,6 +91,14 @@ tr.tx-flagged td {
   background: #ffebee !important;
 }
 td.idle-bad { color: #b71c1c; font-weight: 700; }
+/* Row highlighted when reached via #event-N anchor from the
+   main report. Deliberately stronger than gap-row so the
+   targeted row is unambiguous. */
+tr:target td {
+  background: #fff3bf !important;
+  outline: 2px solid #e2a03f;
+  outline-offset: -2px;
+}
 footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
 
 </style>
@@ -98,16 +106,16 @@ footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: 
 <body>
 <nav class="back"><a href="../report.html">← back to report</a></nav>
 <h1>op: schema-extend</h1>
-<div class="meta">5 events · 1.25 ms wall · 1.07 ms DB (86%) · 173.30 us non-DB (14%)</div>
-<div class="split-hero" title="DB 1.07 ms · non-DB 173.30 us"><span class="split-db" style="flex:86.1015 0 0">DB 1.07 ms</span><span class="split-app" style="flex:13.8985 0 0">non-DB 173.30 us</span></div>
+<div class="meta">5 events · 877.50 us wall · 734.00 us DB (84%) · 143.50 us non-DB (16%)</div>
+<div class="split-hero" title="DB 734.00 us · non-DB 143.50 us"><span class="split-db" style="flex:83.6467 0 0">DB 734.00 us</span><span class="split-app" style="flex:16.3533 0 0">non-DB 143.50 us</span></div>
 <h2>Transactions</h2>
 <p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
 <table>
   <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
   <tbody>
-    <tr><td class="num">1</td><td class="num" data-raw="198600">198.60 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
-    <tr><td class="num">2</td><td class="num" data-raw="187500">187.50 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
-    <tr><td class="num">3</td><td class="num" data-raw="162700">162.70 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">1</td><td class="num" data-raw="140100">140.10 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="114800">114.80 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="78800">78.80 us</td><td class="num">0</td><td class="num">1</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td></tr>
   </tbody>
 </table>
 <h2>Timeline</h2>
@@ -115,11 +123,11 @@ footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: 
 <table>
   <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
   <tbody>
-    <tr><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="524300">524.30 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:30</code></td></tr>
-    <tr><td class="num" data-raw="581200">581.20 us</td><td class="num" data-raw="56900">56.90 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="198600">198.60 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] currency_label_EUR, [2] Euro</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:33</code></td></tr>
-    <tr><td class="num" data-raw="818900">818.90 us</td><td class="num" data-raw="39100">39.10 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="187500">187.50 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] status_label_OPEN, [2] Open</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:35</code></td></tr>
-    <tr><td class="num" data-raw="1053700">1.05 ms</td><td class="num" data-raw="47300">47.30 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="162700">162.70 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] shipping_label_STD, [2] Standard</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:37</code></td></tr>
-    <tr><td class="num" data-raw="1246400">1.25 ms</td><td class="num" data-raw="30000">30.00 us</td><td>CLOSE</td><td class="num" data-raw="500">500 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:38</code></td></tr>
+    <tr id="event-1"><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="399900">399.90 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:30</code></td></tr>
+    <tr id="event-2"><td class="num" data-raw="449400">449.40 us</td><td class="num" data-raw="49500">49.50 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="140100">140.10 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] currency_label_EUR, [2] Euro</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:33</code></td></tr>
+    <tr id="event-3"><td class="num" data-raw="620800">620.80 us</td><td class="num" data-raw="31300">31.30 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="114800">114.80 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] status_label_OPEN, [2] Open</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:35</code></td></tr>
+    <tr id="event-4"><td class="num" data-raw="765700">765.70 us</td><td class="num" data-raw="30100">30.10 us</td><td>EXECUTE_UPDATE</td><td class="num" data-raw="78800">78.80 us</td><td><code class="sql">MERGE INTO SETTINGS (K, V) KEY(K) VALUES (?, ?)</code></td><td><code class="sql">[1] shipping_label_STD, [2] Standard</code></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:37</code></td></tr>
+    <tr id="event-5"><td class="num" data-raw="877100">877.10 us</td><td class="num" data-raw="32600">32.60 us</td><td>CLOSE</td><td class="num" data-raw="400">400 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.cobol.CodeLookupService.seedCodes:38</code></td></tr>
   </tbody>
 </table>
 <footer>Generated by jdbc-prof analyze</footer>

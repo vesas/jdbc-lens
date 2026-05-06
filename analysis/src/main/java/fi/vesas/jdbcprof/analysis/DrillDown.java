@@ -156,7 +156,9 @@ public final class DrillDown {
         // noise between adjacent statements.
         final long GAP_HIGHLIGHT_NANOS = 5_000_000L;
         long prevInv = Long.MIN_VALUE;
+        int eventIndex = 0;
         for (Event e : timeline) {
+            eventIndex++;
             long inv = e.operationInvocationId;
             if (totalInvocations > 1 && inv != prevInv && prevInv != Long.MIN_VALUE) {
                 Integer idx = invIndex.get(inv);
@@ -193,7 +195,7 @@ public final class DrillDown {
             String rowClass = gap >= GAP_HIGHLIGHT_NANOS ? " class=\"gap-row\"" : "";
             lastEndByThread.put(e.threadId, e.timestampNanos + Math.max(0L, e.durationNanos));
 
-            out.println("    <tr" + rowClass + ">"
+            out.println("    <tr id=\"event-" + eventIndex + "\"" + rowClass + ">"
                     + "<td class=\"num\" data-raw=\"" + offset + "\">" + htmlEscape(formatDuration(offset)) + "</td>"
                     + gapCell
                     + "<td>" + htmlEscape(kind) + "</td>"
@@ -512,6 +514,14 @@ public final class DrillDown {
                   background: #ffebee !important;
                 }
                 td.idle-bad { color: #b71c1c; font-weight: 700; }
+                /* Row highlighted when reached via #event-N anchor from the
+                   main report. Deliberately stronger than gap-row so the
+                   targeted row is unambiguous. */
+                tr:target td {
+                  background: #fff3bf !important;
+                  outline: 2px solid #e2a03f;
+                  outline-offset: -2px;
+                }
                 footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
                 """;
     }

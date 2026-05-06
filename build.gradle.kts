@@ -1,6 +1,6 @@
 allprojects {
     group = "fi.vesas"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.1.0"
 }
 
 subprojects {
