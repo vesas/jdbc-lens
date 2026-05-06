@@ -1,3 +1,19 @@
+plugins {
+    id("com.gradleup.nmcp.aggregation") version "1.5.0"
+}
+
+nmcpAggregation {
+    centralPortal {
+        username = providers.gradleProperty("sonatypeUsername").get()
+        password = providers.gradleProperty("sonatypePassword").get()
+        publishingType = "USER_MANAGED"
+    }
+}
+
+dependencies {
+    nmcpAggregation(project(":core"))
+}
+
 allprojects {
     group = "fi.vesas.jdbclens"
     version = "0.1.0"

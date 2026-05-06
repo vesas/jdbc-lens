@@ -4,7 +4,7 @@
 plugins {
     `maven-publish`
     signing
-    id("com.gradleup.nmcp") version "0.1.2"
+    id("com.gradleup.nmcp")
 }
 
 java {
@@ -46,31 +46,18 @@ publishing {
             }
         }
     }
-    nmcp {
-      publishAllPublicationsToCentralPortal {
-          username = providers.gradleProperty("sonatypeUsername").orNull ?: ""
-          password = providers.gradleProperty("sonatypePassword").orNull ?: ""
-          publishingType = "USER_MANAGED"   // AUTOMATIC or "USER_MANAGED" to confirm in the UI
-      }
-  }
 }
 
-// Sign all publication artifacts. Keys are supplied via Gradle properties so
-// that local development works without a keyring and CI injects them as secrets:
-//   signing.keyId         — last 8 hex digits of the key
-//   signing.secretKey     — armored private key block (-----BEGIN PGP PRIVATE KEY BLOCK-----)
-//   signing.password      — passphrase
-//
-// Export the armored key with: gpg --armor --export-secret-keys <keyId>
-// Signing is skipped when no key is configured (local dev); CI must supply all three.
-val signingKey = providers.gradleProperty("signing.secretKey").orNull
-if (!signingKey.isNullOrBlank()) {
+// nmcp marks this module's publications for aggregation at the root project level.
+// Credentials and publishingType are configured there via nmcpAggregation {}.
+
+// Signing uses the system gpg command. Configure in ~/.gradle/gradle.properties:
+//   signing.gnupg.keyName=ABCD1234   (last 8 hex digits of your key)
+//   signing.gnupg.passphrase=...
+// Signing is skipped when keyName is not set (local dev without a keyring).
+if (providers.gradleProperty("signing.gnupg.keyName").isPresent) {
     signing {
-        useInMemoryPgpKeys(
-            providers.gradleProperty("signing.keyId").orNull,
-            signingKey,
-            providers.gradleProperty("signing.password").orNull,
-        )
+        useGpgCmd()
         sign(publishing.publications["maven"])
     }
 }

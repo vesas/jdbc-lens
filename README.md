@@ -26,33 +26,33 @@ the profiler flagged.
 
 ## Use it in another project
 
-### 1. Publish the library to your Maven Local (one-off)
+### 1. Add the dependency
 
-From the `jdbc-lens` repo:
-
-```
-./gradlew :core:publishToMavenLocal
-```
-
-This installs `fi.vesas:jdbc-lens-core:0.1.0` into
-`~/.m2/repository/`.
-
-### 2. Depend on it from your project
-
-In your project's `build.gradle.kts`:
-
+**Gradle (Kotlin DSL):**
 ```kotlin
-repositories {
-    mavenLocal()
-    mavenCentral()
-}
-
 dependencies {
-    testImplementation("fi.vesas:jdbc-prof-core:0.1.0")
+    testImplementation("fi.vesas.jdbclens:jdbc-lens-core:0.1.0")
 }
 ```
 
-Use `implementation` instead if you want the profiler outside tests.
+**Gradle (Groovy DSL):**
+```groovy
+dependencies {
+    testImplementation 'fi.vesas.jdbclens:jdbc-lens-core:0.1.0'
+}
+```
+
+**Maven:**
+```xml
+<dependency>
+    <groupId>fi.vesas.jdbclens</groupId>
+    <artifactId>jdbc-lens-core</artifactId>
+    <version>0.1.0</version>
+    <scope>test</scope>
+</dependency>
+```
+
+Use `implementation` / `compile` scope instead if you want the profiler active outside tests.
 
 ### 3. Start the profiler and wrap your DataSource
 
@@ -82,7 +82,7 @@ Every query that flows through `profiled` is recorded to
 
 ### 5. Generate the report
 
-From the `jdbc-prof` repo:
+From the `jdbc-lens` repo:
 
 ```
 ./gradlew :analysis:run --args="analyze /path/to/recording.jdbclog -o report.html"
