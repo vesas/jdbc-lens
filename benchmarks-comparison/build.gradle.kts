@@ -23,7 +23,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("fi.vesas.jdbcprof.comparison.Cli")
+    mainClass.set("fi.vesas.jdbclens.comparison.Cli")
 }
 
 // Run relative paths against the repo root so default output paths

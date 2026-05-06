@@ -4,6 +4,7 @@
 plugins {
     `maven-publish`
     signing
+    id("com.gradleup.nmcp") version "0.1.2"
 }
 
 java {
@@ -19,11 +20,11 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
-            artifactId = "jdbc-prof-core"
+            artifactId = "jdbc-lens-core"
             pom {
-                name.set("jdbc-prof-core")
+                name.set("jdbc-lens-core")
                 description.set("JDBC call-site profiler — core capture and log-writing library.")
-                url.set("https://github.com/vesas/jdbc-prof")
+                url.set("https://github.com/vesas/jdbc-lens")
                 licenses {
                     license {
                         name.set("MIT License")
@@ -38,29 +39,20 @@ publishing {
                     }
                 }
                 scm {
-                    connection.set("scm:git:git://github.com/vesas/jdbc-prof.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/vesas/jdbc-prof.git")
-                    url.set("https://github.com/vesas/jdbc-prof")
+                    connection.set("scm:git:git://github.com/vesas/jdbc-lens.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/vesas/jdbc-lens.git")
+                    url.set("https://github.com/vesas/jdbc-lens")
                 }
             }
         }
     }
-    repositories {
-        // Central Portal (publisher.sonatype.com) — set credentials via
-        // ~/.gradle/gradle.properties or CI secrets:
-        //   sonatypeUsername=<token-user>
-        //   sonatypePassword=<token-password>
-        // Uncomment and fill in once a Central Portal namespace is registered.
-        //
-        // maven {
-        //     name = "centralPortalStaging"
-        //     url = uri("https://central.sonatype.com/api/v1/publisher/upload")
-        //     credentials {
-        //         username = providers.gradleProperty("sonatypeUsername").orNull
-        //         password = providers.gradleProperty("sonatypePassword").orNull
-        //     }
-        // }
-    }
+    nmcp {
+      publishAllPublicationsToCentralPortal {
+          username = providers.gradleProperty("sonatypeUsername").orNull ?: ""
+          password = providers.gradleProperty("sonatypePassword").orNull ?: ""
+          publishingType = "USER_MANAGED"   // AUTOMATIC or "USER_MANAGED" to confirm in the UI
+      }
+  }
 }
 
 // Sign all publication artifacts. Keys are supplied via Gradle properties so
@@ -70,11 +62,15 @@ publishing {
 //   signing.password      — passphrase
 //
 // Export the armored key with: gpg --armor --export-secret-keys <keyId>
-signing {
-    useInMemoryPgpKeys(
-        providers.gradleProperty("signing.keyId").orNull,
-        providers.gradleProperty("signing.secretKey").orNull,
-        providers.gradleProperty("signing.password").orNull,
-    )
-    sign(publishing.publications["maven"])
+// Signing is skipped when no key is configured (local dev); CI must supply all three.
+val signingKey = providers.gradleProperty("signing.secretKey").orNull
+if (!signingKey.isNullOrBlank()) {
+    signing {
+        useInMemoryPgpKeys(
+            providers.gradleProperty("signing.keyId").orNull,
+            signingKey,
+            providers.gradleProperty("signing.password").orNull,
+        )
+        sign(publishing.publications["maven"])
+    }
 }

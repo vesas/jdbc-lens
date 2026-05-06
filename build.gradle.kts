@@ -1,5 +1,5 @@
 allprojects {
-    group = "fi.vesas"
+    group = "fi.vesas.jdbclens"
     version = "0.1.0"
 }
 
