@@ -135,6 +135,26 @@ class N1DetectorTest {
         return m;
     }
 
+    @Test
+    void totalCountSpansAllCallSitesNotJustDominant() {
+        // Template runs 9 times from stackA and 2 times from stackB.
+        // totalCount must be 11 (the sum), not 9 (just the dominant pair).
+        // With minFraction = 0.8, domFraction = 9/11 ≈ 0.818 qualifies.
+        // A bug that stored domCount instead of totalCount would produce count=9.
+        Aggregator agg = new Aggregator();
+        for (int i = 0; i < 9; i++) agg.add(exec(1, 2, 1_000));
+        for (int i = 0; i < 2; i++) agg.add(exec(2, 2, 1_000));
+        Map<Integer, StackFrameSnapshot[]> stacks = new HashMap<>();
+        stacks.put(1, new StackFrameSnapshot[] { frame("com.example.A", "a", 1) });
+        stacks.put(2, new StackFrameSnapshot[] { frame("com.example.B", "b", 2) });
+
+        List<N1Finding> findings = new N1Detector(10, 0.8)
+                .detect(agg, sqls(2, "SELECT x"), stacks);
+
+        assertThat(findings).hasSize(1);
+        assertThat(findings.get(0).count()).isEqualTo(11L);
+    }
+
     private static Map<Integer, StackFrameSnapshot[]> stacks(int stackId) {
         Map<Integer, StackFrameSnapshot[]> m = new HashMap<>();
         m.put(stackId, new StackFrameSnapshot[] { frame("com.example.Dao", "find", 1) });

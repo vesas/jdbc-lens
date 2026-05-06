@@ -124,6 +124,33 @@ class RedundantQueryDetectorTest {
         m.put(k, s);
     }
 
+    @Test
+    void samePatternInTwoOpsProducesTwoSeparateFindings() {
+        // The same (sql, fingerprint, stack) appearing 3 times in op1 AND 3 times
+        // in op2 must produce two independent findings — one per op — each with
+        // count=3. A regression that dropped opId from the Key would merge them
+        // into one finding with count=6.
+        Map<RedundantQueryDetector.Key, RedundantQueryDetector.Stats> agg = new HashMap<>();
+        put(agg, key(1L, 0, 0xAAAAL, 1), 3, 3_000L);
+        put(agg, key(2L, 0, 0xAAAAL, 1), 3, 6_000L);
+
+        Map<Integer, String> sqls = Map.of(0, "SELECT x");
+        Map<Long, String> ops = new HashMap<>();
+        ops.put(1L, "op-one");
+        ops.put(2L, "op-two");
+        Map<Integer, StackFrameSnapshot[]> stacks = Map.of(1, stackA());
+
+        List<RedundantFinding> findings = new RedundantQueryDetector()
+                .detect(agg, sqls, ops, stacks, NO_OP);
+
+        assertThat(findings).hasSize(2);
+        // Ranked by total duration desc: op-two (6000) before op-one (3000).
+        assertThat(findings.get(0).opName()).isEqualTo("op-two");
+        assertThat(findings.get(0).count()).isEqualTo(3L);
+        assertThat(findings.get(1).opName()).isEqualTo("op-one");
+        assertThat(findings.get(1).count()).isEqualTo(3L);
+    }
+
     private static StackFrameSnapshot[] stackA() {
         return new StackFrameSnapshot[] {
                 new StackFrameSnapshot("com.example.Dao", "findById", 47),

@@ -603,6 +603,108 @@ class HtmlReportTest {
     }
 
     @Test
+    void redundantCountExcludesPrepareEvents() throws Exception {
+        // A PREPARE event for the same (op, sql, fingerprint, stack) must not
+        // be counted in the redundant-query execution count. Three EXECUTE_QUERY
+        // events → finding shows "3×". If PREPARE were accidentally included in
+        // isExecute(), Model.load() would build count=4 and the badge would lie.
+        Path tmp = Files.createTempFile("jdbcprof-html-redundant-prepare-", ".jdbclog");
+        try {
+            try (BinaryLogWriter w = new BinaryLogWriter(tmp)) {
+                w.writeSqlDelta(0, List.of("SELECT email FROM customers WHERE id = ?"));
+                StackFrameSnapshot[] frames = {
+                        new StackFrameSnapshot("com.example.Dao", "findEmail", 10)
+                };
+                w.writeStackDelta(0, Collections.singletonList(frames));
+                w.writeOpDelta(0, List.of("checkout"));
+                long fp = 0xABCDEF1234567890L;
+
+                Event prepare = buildEvent(1_000L, 1, EventType.PREPARE.code(), 0, 0, 100L);
+                prepare.operationId = 0L;
+                prepare.operationInvocationId = 100L;
+                prepare.parameterFingerprint = fp;
+
+                Event[] batch = {
+                        prepare,
+                        redundant(2_000L, 500L, 0L, 100L, 0, 0, fp, -1),
+                        redundant(3_000L, 500L, 0L, 100L, 0, 0, fp, -1),
+                        redundant(4_000L, 500L, 0L, 100L, 0, 0, fp, -1)
+                };
+                w.writeEvents(batch, batch.length);
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (PrintStream ps = new PrintStream(bytes, false, StandardCharsets.UTF_8)) {
+                HtmlReport.write(tmp, ps);
+            }
+            String html = bytes.toString(StandardCharsets.UTF_8);
+
+            int sectionStart = html.indexOf(">Repeated queries with identical parameters<");
+            assertThat(sectionStart)
+                    .as("redundant queries section must exist")
+                    .isGreaterThanOrEqualTo(0);
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
+            if (sectionEnd < 0) sectionEnd = html.length();
+            String section = html.substring(sectionStart, sectionEnd);
+
+            assertThat(section)
+                    .as("PREPARE must not be counted — finding must show 3× not 4×")
+                    .contains("3×");
+            assertThat(section)
+                    .doesNotContain("4×");
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void n1CountExcludesPrepareEvents() throws Exception {
+        // A PREPARE event for the same (sql, stack) must not be counted in the
+        // N+1 execution count. Twelve EXECUTE_QUERY events → finding shows "12×".
+        // If PREPARE were included in executeAgg, count would be 13.
+        Path tmp = Files.createTempFile("jdbcprof-html-n1-prepare-", ".jdbclog");
+        try {
+            try (BinaryLogWriter w = new BinaryLogWriter(tmp)) {
+                w.writeSqlDelta(0, List.of("SELECT name FROM t WHERE id = ?"));
+                StackFrameSnapshot[] frames = {
+                        new StackFrameSnapshot("com.example.Dao", "find", 10),
+                        new StackFrameSnapshot("com.example.Service", "loadAll", 5)
+                };
+                w.writeStackDelta(0, Collections.singletonList(frames));
+
+                Event prepare = buildEvent(1_000L, 1, EventType.PREPARE.code(), 0, 0, 200L);
+                Event[] batch = new Event[13];
+                batch[0] = prepare;
+                for (int i = 0; i < 12; i++) {
+                    batch[i + 1] = buildEvent(2_000L + i, 1,
+                            EventType.EXECUTE_QUERY.code(), 0, 0, 1_000L);
+                }
+                w.writeEvents(batch, batch.length);
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (PrintStream ps = new PrintStream(bytes, false, StandardCharsets.UTF_8)) {
+                HtmlReport.write(tmp, ps);
+            }
+            String html = bytes.toString(StandardCharsets.UTF_8);
+
+            int sectionStart = html.indexOf("<summary>N+1 findings</summary>");
+            assertThat(sectionStart)
+                    .as("N+1 section must exist")
+                    .isGreaterThanOrEqualTo(0);
+            int sectionEnd = html.indexOf("<details class=\"section\"", sectionStart + 1);
+            if (sectionEnd < 0) sectionEnd = html.length();
+            String section = html.substring(sectionStart, sectionEnd);
+
+            assertThat(section)
+                    .as("PREPARE must not be counted — finding must show 12× not 13×")
+                    .contains("12×");
+            assertThat(section)
+                    .doesNotContain("13×");
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
     void sortSortablesCarryRawNumericAttributes() throws Exception {
         Path tmp = Files.createTempFile("jdbcprof-html-sort-", ".jdbclog");
         try {
