@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 /**
  * One scenario × mode measurement.

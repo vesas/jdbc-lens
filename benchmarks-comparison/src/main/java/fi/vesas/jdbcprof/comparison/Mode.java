@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 /**
  * Which (if any) JDBC interceptor wraps the DataSource for a run.

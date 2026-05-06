@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jdbc-prof op: order-report</title>
+<style>
+:root {
+  --fg: #1b1f23;
+  --fg-muted: #57606a;
+  --bg: #ffffff;
+  --bg-alt: #f6f8fa;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+nav.back { margin-bottom: 16px; font-size: 13px; }
+nav.back a { color: var(--accent); text-decoration: none; }
+nav.back a:hover { text-decoration: underline; }
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 24px 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.meta { color: var(--fg-muted); font-size: 13px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; font-size: 11px;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--bg-alt); }
+tr.inv-divider td {
+  background: var(--bg);
+  border-top: 2px solid var(--accent);
+  border-bottom: none;
+  padding: 8px 8px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+code.sql, code.site { font-family: var(--mono); font-size: 12px; }
+code.sql { white-space: pre-wrap; word-break: break-word; }
+.muted { color: var(--fg-muted); }
+/* Hero split bar at the top of each drill-down: big, labelled. */
+.split-hero {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  margin: 8px 0 16px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #fff;
+}
+.split-hero > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 8px;
+}
+.split-hero .split-db { background: #4a90d9; }
+.split-hero .split-app { background: #8a94a0; }
+/* Timeline row with a noticeable gap before it — highlights the
+   non-DB pause so the reader's eye jumps to it. */
+tr.gap-row td {
+  background: #fff8e1 !important;
+  border-top: 2px solid #e2a03f;
+}
+tr.gap-row td:nth-child(2) {
+  font-weight: 700;
+  color: #8a5a00;
+}
+/* Transaction row flagged by the idle-lock detector. */
+tr.tx-flagged td {
+  background: #ffebee !important;
+}
+td.idle-bad { color: #b71c1c; font-weight: 700; }
+/* Row highlighted when reached via #event-N anchor from the
+   main report. Deliberately stronger than gap-row so the
+   targeted row is unambiguous. */
+tr:target td {
+  background: #fff3bf !important;
+  outline: 2px solid #e2a03f;
+  outline-offset: -2px;
+}
+footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: center; }
+
+</style>
+</head>
+<body>
+<nav class="back"><a href="../report.html">← back to report</a></nav>
+<h1>op: order-report</h1>
+<div class="meta">65 events · 9.91 ms wall · 6.94 ms DB (70%) · 2.98 ms non-DB (30%)</div>
+<div class="split-hero" title="DB 6.94 ms · non-DB 2.98 ms"><span class="split-db" style="flex:69.9742 0 0">DB 6.94 ms</span><span class="split-app" style="flex:30.0258 0 0">non-DB 2.98 ms</span></div>
+<h2>Transactions</h2>
+<p class="findings-empty">Autocommit mode — every statement was its own transaction. Group related writes in one explicit transaction (and reads outside it) to cut round-trips.</p>
+<table>
+  <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num" data-raw="4564500">4.56 ms</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="97500">97.50 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">3</td><td class="num" data-raw="14700">14.70 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">4</td><td class="num" data-raw="18300">18.30 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">5</td><td class="num" data-raw="23900">23.90 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">6</td><td class="num" data-raw="20400">20.40 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">7</td><td class="num" data-raw="20500">20.50 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">8</td><td class="num" data-raw="21600">21.60 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">9</td><td class="num" data-raw="18900">18.90 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">10</td><td class="num" data-raw="18900">18.90 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+    <tr><td class="num">11</td><td class="num" data-raw="17800">17.80 us</td><td class="num">1</td><td class="num">0</td><td class="num muted" data-raw="0">—</td><td>autocommit</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td></tr>
+  </tbody>
+</table>
+<h2>Timeline</h2>
+<p class="meta"><strong>gap</strong> is idle time since the previous event on the same thread — highlighted rows had <em>noticeably more</em> app/non-DB time before them than the rest. Follow those to find where the op lost its wall-clock time outside the database.</p>
+<table>
+  <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
+  <tbody>
+    <tr id="event-1"><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="2068500">2.07 ms</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-2"><td class="num" data-raw="2158100">2.16 ms</td><td class="num" data-raw="89600">89.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="4564500">4.56 ms</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><code class="sql">[1] 10</code></td><td><code class="site">fi.vesas.jdbclens.sample.service.OrderReportService.topCustomersBySpend:40</code></td></tr>
+    <tr id="event-3"><td class="num" data-raw="6790600">6.79 ms</td><td class="num" data-raw="68000">68.00 us</td><td>NEXT</td><td class="num" data-raw="1700">1.70 us</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-4"><td class="num" data-raw="9196600">9.20 ms</td><td class="num" data-raw="2404300">2.40 ms</td><td>NEXT</td><td class="num" data-raw="1000">1.00 us</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-5"><td class="num" data-raw="9201000">9.20 ms</td><td class="num" data-raw="3400">3.40 us</td><td>NEXT</td><td class="num" data-raw="0">0 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-6"><td class="num" data-raw="9202100">9.20 ms</td><td class="num" data-raw="1100">1.10 us</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-7"><td class="num" data-raw="9203000">9.20 ms</td><td class="num" data-raw="800">800 ns</td><td>NEXT</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-8"><td class="num" data-raw="9204100">9.20 ms</td><td class="num" data-raw="900">900 ns</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-9"><td class="num" data-raw="9205000">9.21 ms</td><td class="num" data-raw="800">800 ns</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-10"><td class="num" data-raw="9205900">9.21 ms</td><td class="num" data-raw="800">800 ns</td><td>NEXT</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-11"><td class="num" data-raw="9206900">9.21 ms</td><td class="num" data-raw="800">800 ns</td><td>NEXT</td><td class="num" data-raw="0">0 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-12"><td class="num" data-raw="9209800">9.21 ms</td><td class="num" data-raw="2900">2.90 us</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-13"><td class="num" data-raw="9210700">9.21 ms</td><td class="num" data-raw="800">800 ns</td><td>NEXT</td><td class="num" data-raw="400">400 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-14"><td class="num" data-raw="9212600">9.21 ms</td><td class="num" data-raw="1500">1.50 us</td><td>CLOSE</td><td class="num" data-raw="900">900 ns</td><td><code class="sql">SELECT c.id, c.name, COUNT(o.id), SUM(o.amount) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY SUM(o…</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-15"><td class="num" data-raw="9216700">9.22 ms</td><td class="num" data-raw="3200">3.20 us</td><td>CLOSE</td><td class="num" data-raw="1800">1.80 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-16"><td class="num" data-raw="9228900">9.23 ms</td><td class="num" data-raw="10400">10.40 us</td><td>PREPARE</td><td class="num" data-raw="4900">4.90 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-17"><td class="num" data-raw="9326600">9.33 ms</td><td class="num" data-raw="92800">92.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="97500">97.50 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 169</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-18"><td class="num" data-raw="9447800">9.45 ms</td><td class="num" data-raw="23700">23.70 us</td><td>NEXT</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-19"><td class="num" data-raw="9450900">9.45 ms</td><td class="num" data-raw="2900">2.90 us</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-20"><td class="num" data-raw="9451300">9.45 ms</td><td class="num" data-raw="200">200 ns</td><td>CLOSE</td><td class="num" data-raw="300">300 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-21"><td class="num" data-raw="9452500">9.45 ms</td><td class="num" data-raw="900">900 ns</td><td>PREPARE</td><td class="num" data-raw="800">800 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-22"><td class="num" data-raw="9466100">9.47 ms</td><td class="num" data-raw="12800">12.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="14700">14.70 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 162</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-23"><td class="num" data-raw="9487800">9.49 ms</td><td class="num" data-raw="7000">7.00 us</td><td>NEXT</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-24"><td class="num" data-raw="9489800">9.49 ms</td><td class="num" data-raw="1800">1.80 us</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-25"><td class="num" data-raw="9490100">9.49 ms</td><td class="num" data-raw="100">100 ns</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-26"><td class="num" data-raw="9490800">9.49 ms</td><td class="num" data-raw="500">500 ns</td><td>PREPARE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-27"><td class="num" data-raw="9500500">9.50 ms</td><td class="num" data-raw="9200">9.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="18300">18.30 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 155</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-28"><td class="num" data-raw="9526000">9.53 ms</td><td class="num" data-raw="7200">7.20 us</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-29"><td class="num" data-raw="9527700">9.53 ms</td><td class="num" data-raw="1600">1.60 us</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-30"><td class="num" data-raw="9528000">9.53 ms</td><td class="num" data-raw="100">100 ns</td><td>CLOSE</td><td class="num" data-raw="100">100 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-31"><td class="num" data-raw="9528600">9.53 ms</td><td class="num" data-raw="500">500 ns</td><td>PREPARE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-32"><td class="num" data-raw="9540400">9.54 ms</td><td class="num" data-raw="11300">11.30 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="23900">23.90 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 148</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-33"><td class="num" data-raw="9577600">9.58 ms</td><td class="num" data-raw="13300">13.30 us</td><td>NEXT</td><td class="num" data-raw="700">700 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-34"><td class="num" data-raw="9579900">9.58 ms</td><td class="num" data-raw="1600">1.60 us</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-35"><td class="num" data-raw="9580200">9.58 ms</td><td class="num" data-raw="100">100 ns</td><td>CLOSE</td><td class="num" data-raw="100">100 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-36"><td class="num" data-raw="9581200">9.58 ms</td><td class="num" data-raw="900">900 ns</td><td>PREPARE</td><td class="num" data-raw="2900">2.90 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-37"><td class="num" data-raw="9597300">9.60 ms</td><td class="num" data-raw="13200">13.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="20400">20.40 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 141</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-38"><td class="num" data-raw="9630400">9.63 ms</td><td class="num" data-raw="12700">12.70 us</td><td>NEXT</td><td class="num" data-raw="1100">1.10 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-39"><td class="num" data-raw="9635000">9.64 ms</td><td class="num" data-raw="3500">3.50 us</td><td>CLOSE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-40"><td class="num" data-raw="9635900">9.64 ms</td><td class="num" data-raw="400">400 ns</td><td>CLOSE</td><td class="num" data-raw="600">600 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-41"><td class="num" data-raw="9637000">9.64 ms</td><td class="num" data-raw="500">500 ns</td><td>PREPARE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-42"><td class="num" data-raw="9653000">9.65 ms</td><td class="num" data-raw="15500">15.50 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="20500">20.50 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 134</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-43"><td class="num" data-raw="9687100">9.69 ms</td><td class="num" data-raw="13600">13.60 us</td><td>NEXT</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-44"><td class="num" data-raw="9692800">9.69 ms</td><td class="num" data-raw="5600">5.60 us</td><td>CLOSE</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-45"><td class="num" data-raw="9693100">9.69 ms</td><td class="num" data-raw="200">200 ns</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-46"><td class="num" data-raw="9693800">9.69 ms</td><td class="num" data-raw="500">500 ns</td><td>PREPARE</td><td class="num" data-raw="3100">3.10 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-47"><td class="num" data-raw="9712500">9.71 ms</td><td class="num" data-raw="15600">15.60 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="21600">21.60 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 127</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-48"><td class="num" data-raw="9748300">9.75 ms</td><td class="num" data-raw="14200">14.20 us</td><td>NEXT</td><td class="num" data-raw="200">200 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-49"><td class="num" data-raw="9752600">9.75 ms</td><td class="num" data-raw="4100">4.10 us</td><td>CLOSE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-50"><td class="num" data-raw="9753600">9.75 ms</td><td class="num" data-raw="500">500 ns</td><td>CLOSE</td><td class="num" data-raw="300">300 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-51"><td class="num" data-raw="9754400">9.75 ms</td><td class="num" data-raw="500">500 ns</td><td>PREPARE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-52"><td class="num" data-raw="9770100">9.77 ms</td><td class="num" data-raw="15200">15.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="18900">18.90 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 120</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-53"><td class="num" data-raw="9802500">9.80 ms</td><td class="num" data-raw="13500">13.50 us</td><td>NEXT</td><td class="num" data-raw="300">300 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-54"><td class="num" data-raw="9804900">9.80 ms</td><td class="num" data-raw="2100">2.10 us</td><td>CLOSE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-55"><td class="num" data-raw="9805900">9.81 ms</td><td class="num" data-raw="500">500 ns</td><td>CLOSE</td><td class="num" data-raw="900">900 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-56"><td class="num" data-raw="9807900">9.81 ms</td><td class="num" data-raw="1100">1.10 us</td><td>PREPARE</td><td class="num" data-raw="600">600 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-57"><td class="num" data-raw="9824700">9.82 ms</td><td class="num" data-raw="16200">16.20 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="18900">18.90 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 113</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-58"><td class="num" data-raw="9855600">9.86 ms</td><td class="num" data-raw="12000">12.00 us</td><td>NEXT</td><td class="num" data-raw="400">400 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-59"><td class="num" data-raw="9860300">9.86 ms</td><td class="num" data-raw="4300">4.30 us</td><td>CLOSE</td><td class="num" data-raw="100">100 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-60"><td class="num" data-raw="9860500">9.86 ms</td><td class="num" data-raw="100">100 ns</td><td>CLOSE</td><td class="num" data-raw="200">200 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-61"><td class="num" data-raw="9861100">9.86 ms</td><td class="num" data-raw="400">400 ns</td><td>PREPARE</td><td class="num" data-raw="500">500 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-62"><td class="num" data-raw="9878400">9.88 ms</td><td class="num" data-raw="16800">16.80 us</td><td>EXECUTE_QUERY</td><td class="num" data-raw="17800">17.80 us</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><code class="sql">[1] 106</code></td><td><code class="site">fi.vesas.jdbclens.sample.dao.CustomerDao.findFullById:41</code></td></tr>
+    <tr id="event-63"><td class="num" data-raw="9909300">9.91 ms</td><td class="num" data-raw="13100">13.10 us</td><td>NEXT</td><td class="num" data-raw="300">300 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-64"><td class="num" data-raw="9912200">9.91 ms</td><td class="num" data-raw="2600">2.60 us</td><td>CLOSE</td><td class="num" data-raw="900">900 ns</td><td><code class="sql">SELECT id, name, email, phone, address_line, city, state, postal_code, country, timezone FROM customers WHERE id = ?</code></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+    <tr id="event-65"><td class="num" data-raw="9913500">9.91 ms</td><td class="num" data-raw="400">400 ns</td><td>CLOSE</td><td class="num" data-raw="300">300 ns</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
+  </tbody>
+</table>
+<footer>Generated by jdbc-prof analyze</footer>
+</body>
+</html>

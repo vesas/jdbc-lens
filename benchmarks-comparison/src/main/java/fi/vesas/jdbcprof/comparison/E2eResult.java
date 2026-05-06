@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 /**
  * One mode's worth of end-to-end measurements. Each {@code runs[i]} is

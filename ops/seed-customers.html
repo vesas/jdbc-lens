@@ -106,14 +106,14 @@ footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: 
 <body>
 <nav class="back"><a href="../report.html">← back to report</a></nav>
 <h1>op: seed-customers</h1>
-<div class="meta">4 events · 20.58 ms wall · 7.88 ms DB (38%) · 12.69 ms non-DB (62%)</div>
-<div class="split-hero" title="DB 7.88 ms · non-DB 12.69 ms"><span class="split-db" style="flex:38.3039 0 0">DB 7.88 ms</span><span class="split-app" style="flex:61.6961 0 0">non-DB 12.69 ms</span></div>
+<div class="meta">4 events · 32.86 ms wall · 14.22 ms DB (43%) · 18.64 ms non-DB (57%)</div>
+<div class="split-hero" title="DB 14.22 ms · non-DB 18.64 ms"><span class="split-db" style="flex:43.2734 0 0">DB 14.22 ms</span><span class="split-app" style="flex:56.7266 0 0">non-DB 18.64 ms</span></div>
 <h2>Transactions</h2>
 <table>
   <thead><tr><th class="num">#</th><th class="num">duration</th><th class="num">reads</th><th class="num">writes</th><th class="num">max idle</th><th>outcome</th><th>longest template</th></tr></thead>
   <tbody>
-    <tr><td class="num">1</td><td class="num" data-raw="20405400">20.41 ms</td><td class="num">0</td><td class="num">1</td><td class="num" data-raw="12301000">12.30 ms</td><td>commit</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td></tr>
-    <tr><td class="num">2</td><td class="num" data-raw="6000">6.00 us</td><td class="num">0</td><td class="num">0</td><td class="num" data-raw="0">0 ns</td><td>commit</td><td><span class="muted">—</span></td></tr>
+    <tr><td class="num">1</td><td class="num" data-raw="32720800">32.72 ms</td><td class="num">0</td><td class="num">1</td><td class="num" data-raw="18338000">18.34 ms</td><td>commit</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td></tr>
+    <tr><td class="num">2</td><td class="num" data-raw="5400">5.40 us</td><td class="num">0</td><td class="num">0</td><td class="num" data-raw="0">0 ns</td><td>commit</td><td><span class="muted">—</span></td></tr>
   </tbody>
 </table>
 <h2>Timeline</h2>
@@ -121,10 +121,10 @@ footer { margin-top: 32px; font-size: 12px; color: var(--fg-muted); text-align: 
 <table>
   <thead><tr><th class="num">+offset</th><th class="num">gap</th><th>event</th><th class="num">duration</th><th>template</th><th>params</th><th>call-site</th></tr></thead>
   <tbody>
-    <tr id="event-1"><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="2351800">2.35 ms</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.seed:80</code></td></tr>
-    <tr id="event-2" class="gap-row"><td class="num" data-raw="14652800">14.65 ms</td><td class="num" data-raw="12301000">12.30 ms</td><td>EXECUTE_BATCH</td><td class="num" data-raw="4311300">4.31 ms</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.seed:97</code></td></tr>
-    <tr id="event-3"><td class="num" data-raw="19193200">19.19 ms</td><td class="num" data-raw="229100">229.10 us</td><td>COMMIT</td><td class="num" data-raw="1212200">1.21 ms</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.seed:98</code></td></tr>
-    <tr id="event-4"><td class="num" data-raw="20569700">20.57 ms</td><td class="num" data-raw="164300">164.30 us</td><td>CLOSE</td><td class="num" data-raw="6000">6.00 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbcprof.sample.dao.CustomerDao.seed:99</code></td></tr>
+    <tr id="event-1"><td class="num" data-raw="0">0 ns</td><td class="num muted" data-raw="0">—</td><td>PREPARE</td><td class="num" data-raw="1464600">1.46 ms</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.wrapPrepared:66</code></td></tr>
+    <tr id="event-2" class="gap-row"><td class="num" data-raw="19802600">19.80 ms</td><td class="num" data-raw="18338000">18.34 ms</td><td>EXECUTE_BATCH</td><td class="num" data-raw="11925800">11.93 ms</td><td><code class="sql">INSERT INTO customers (id, name, email, phone, address_line, city, state, postal_code, country, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?…</code></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingPreparedStatement.executeBatch:301</code></td></tr>
+    <tr id="event-3"><td class="num" data-raw="31898400">31.90 ms</td><td class="num" data-raw="170000">170.00 us</td><td>COMMIT</td><td class="num" data-raw="822400">822.40 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">fi.vesas.jdbclens.capture.CapturingConnection.commit:202</code></td></tr>
+    <tr id="event-4"><td class="num" data-raw="32851300">32.85 ms</td><td class="num" data-raw="130500">130.50 us</td><td>CLOSE</td><td class="num" data-raw="5400">5.40 us</td><td><span class="muted">—</span></td><td><span class="muted">—</span></td><td><code class="site">stack[-1]</code></td></tr>
   </tbody>
 </table>
 <footer>Generated by jdbc-prof analyze</footer>

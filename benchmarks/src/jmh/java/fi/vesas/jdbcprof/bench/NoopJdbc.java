@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.bench;
+package fi.vesas.jdbclens.bench;
 
 import javax.sql.DataSource;
 import java.io.InputStream;

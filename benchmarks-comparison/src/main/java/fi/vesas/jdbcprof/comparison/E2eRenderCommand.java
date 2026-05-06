@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;

@@ -1,9 +1,9 @@
-package fi.vesas.jdbcprof.bench;
+package fi.vesas.jdbclens.bench;
 
-import fi.vesas.jdbcprof.capture.CaptureContext;
-import fi.vesas.jdbcprof.capture.CapturingDataSource;
-import fi.vesas.jdbcprof.sink.Sink;
-import fi.vesas.jdbcprof.storage.BinaryLogWriter;
+import fi.vesas.jdbclens.capture.CaptureContext;
+import fi.vesas.jdbclens.capture.CapturingDataSource;
+import fi.vesas.jdbclens.sink.Sink;
+import fi.vesas.jdbclens.storage.BinaryLogWriter;
 
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;

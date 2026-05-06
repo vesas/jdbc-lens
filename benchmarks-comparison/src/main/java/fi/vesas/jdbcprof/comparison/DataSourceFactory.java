@@ -1,8 +1,10 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 import com.p6spy.engine.spy.P6DataSource;
-import fi.vesas.jdbcprof.Profiler;
-import fi.vesas.jdbcprof.ProfilerConfig;
+
+import fi.vesas.jdbclens.Profiler;
+import fi.vesas.jdbclens.ProfilerConfig;
+
 import org.h2.jdbcx.JdbcDataSource;
 
 import javax.sql.DataSource;

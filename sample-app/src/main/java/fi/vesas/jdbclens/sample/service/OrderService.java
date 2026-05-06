@@ -1,0 +1,84 @@
+package fi.vesas.jdbclens.sample.service;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+
+import fi.vesas.jdbclens.sample.dao.AuditDao;
+import fi.vesas.jdbclens.sample.dao.CustomerDao;
+import fi.vesas.jdbclens.sample.dao.OrderDao;
+import fi.vesas.jdbclens.sample.dao.SettingsDao;
+
+public final class OrderService {
+
+    private final OrderDao orders;
+    private final CustomerDao customers;
+    private final SettingsDao settings;
+    private final NotificationService notifications;
+
+    public OrderService(OrderDao orders, CustomerDao customers, SettingsDao settings,
+                        NotificationService notifications) {
+        this.orders = orders;
+        this.customers = customers;
+        this.settings = settings;
+        this.notifications = notifications;
+    }
+
+    /**
+     * Textbook N+1. {@link OrderDao#findRecent} returns a batch of
+     * order summaries; the service loops and asks the customer DAO
+     * for one name at a time. The ancestor frame the report should
+     * point at is this method's loop — not the DAO method — because
+     * the DAO is just doing what it's told.
+     */
+    public void listDashboard(Connection c, int limit) throws SQLException {
+        List<OrderDao.Summary> recent = orders.findRecent(c, limit);
+        for (OrderDao.Summary o : recent) {
+            customers.findById(c, o.customerId());
+        }
+    }
+
+    /**
+     * Plants two patterns side by side: a redundant
+     * {@code SELECT v FROM settings WHERE k = 'max_order_value'}
+     * per loop iteration (same params — cache candidate) and a
+     * non-redundant INSERT that varies the customer id (N+1-shaped
+     * batching opportunity).
+     */
+    public void placeOrders(Connection c, int customerCount) throws SQLException {
+        BigDecimal unitPrice = new BigDecimal("19.95");
+        for (int cid = 1; cid <= customerCount; cid++) {
+            settings.getByKey(c, "max_order_value");
+            orders.insert(c, cid, unitPrice);
+        }
+    }
+
+    /**
+     * Realistic multi-step flow the drill-down page is meant to
+     * showcase. One invocation produces: validate → two settings
+     * lookups → insert order → two audit writes. The call chain into
+     * {@link AuditDao#log} is three services deep.
+     */
+    public void completeCheckout(Connection c, int customerId, BigDecimal amount) throws SQLException {
+        customers.findById(c, customerId);
+        settings.getByKey(c, "max_order_value");
+        settings.getByKey(c, "default_currency");
+        orders.insert(c, customerId, amount);
+        notifications.recordCheckout(c, customerId, amount);
+    }
+
+    /**
+     * Write-amplification anti-pattern. Two services each "own" a
+     * column on the orders row and both update it on shipment — the
+     * status service flips {@code status} then the logistics service
+     * stamps {@code shipped_at}. Two round-trips, two trigger fires,
+     * two CDC messages for what should be a single UPDATE.
+     * Disjoint SET columns — the detector should label this
+     * "mergeable".
+     */
+    public void finalizeShipment(Connection c, int orderId) throws SQLException {
+        orders.updateStatus(c, orderId, "SHIPPED");
+        orders.markShipped(c, orderId, new java.sql.Timestamp(System.currentTimeMillis()));
+    }
+}

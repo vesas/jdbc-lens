@@ -19,5 +19,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("fi.vesas.jdbcprof.sample.Main")
+    mainClass.set("fi.vesas.jdbclens.sample.Main")
 }

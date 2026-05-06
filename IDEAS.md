@@ -1,4 +1,4 @@
-# jdbc-prof — ideas backlog
+# jdbc-lens — ideas backlog
 
 Parking lot for features and fixes that were discussed but not yet
 built. Grouped by the kind of user problem they solve. The spec

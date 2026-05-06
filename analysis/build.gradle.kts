@@ -8,7 +8,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("fi.vesas.jdbcprof.analysis.Cli")
+    mainClass.set("fi.vesas.jdbclens.analysis.Cli")
 }
 
 // Run relative paths against the repo root, not the subproject dir.

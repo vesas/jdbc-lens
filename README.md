@@ -24,13 +24,13 @@ the profiler flagged.
 
 ### 1. Publish the library to your Maven Local (one-off)
 
-From the `jdbc-prof` repo:
+From the `jdbc-lens` repo:
 
 ```
 ./gradlew :core:publishToMavenLocal
 ```
 
-This installs `fi.vesas:jdbc-prof-core:0.1.0` into
+This installs `fi.vesas:jdbc-lens-core:0.1.0` into
 `~/.m2/repository/`.
 
 ### 2. Depend on it from your project
@@ -55,8 +55,8 @@ Use `implementation` instead if you want the profiler outside tests.
 Before the workload you want to profile:
 
 ```java
-import fi.vesas.jdbcprof.Profiler;
-import fi.vesas.jdbcprof.ProfilerConfig;
+import fi.vesas.jdbclens.Profiler;
+import fi.vesas.jdbclens.ProfilerConfig;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 

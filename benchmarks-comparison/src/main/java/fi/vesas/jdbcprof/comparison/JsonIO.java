@@ -1,4 +1,4 @@
-package fi.vesas.jdbcprof.comparison;
+package fi.vesas.jdbclens.comparison;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
