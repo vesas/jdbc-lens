@@ -1,4 +1,4 @@
-# JDBC Profiler
+# JDBCLens
 
 Records every JDBC query your app runs, attributes it to the call-site
 in your code, and produces an HTML report. Results are grouped by
