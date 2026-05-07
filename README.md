@@ -5,7 +5,9 @@ in your code, and produces an HTML report. Results are grouped by
 call-site, by SQL template, and by their combination. The call-site
 view is what makes N+1 patterns and dominant call-sites easy to find.
 
-## Screenshot
+## Screenshots
+
+![JDBC Profiler report screenshot](ss2.png)
 
 ![JDBC Profiler report screenshot](ss1.png)
 
