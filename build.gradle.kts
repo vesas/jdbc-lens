@@ -4,8 +4,8 @@ plugins {
 
 nmcpAggregation {
     centralPortal {
-        username = providers.gradleProperty("sonatypeUsername").get()
-        password = providers.gradleProperty("sonatypePassword").get()
+        username = providers.gradleProperty("sonatypeUsername").orElse("")
+        password = providers.gradleProperty("sonatypePassword").orElse("")
         publishingType = "USER_MANAGED"
     }
 }
