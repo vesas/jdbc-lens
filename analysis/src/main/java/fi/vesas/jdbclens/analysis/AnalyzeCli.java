@@ -17,9 +17,8 @@ import java.util.concurrent.Callable;
 
 /**
  * The {@code analyze} subcommand of the {@code jdbc-profile} CLI
- * (spec §8). Reads a recording and produces either a text dump
- * (stdout or a {@code .txt} file) or an HTML report (when the
- * output path ends with {@code .html}/{@code .htm}).
+ * (spec §8). Reads a recording and produces a text dump, HTML report,
+ * or machine-readable JSON ({@code --format json}).
  *
  * <p>Mounted under the root {@link Cli} so the canonical invocation
  * is {@code jdbc-profile analyze <recording>} as documented in the
@@ -29,7 +28,8 @@ import java.util.concurrent.Callable;
 @Command(
         name = "analyze",
         description = "Read a jdbc-prof recording and render it "
-                + "(text dump by default; HTML when output ends in .html).",
+                + "(text dump by default; --format json for LLM-agent use; "
+                + "HTML when output ends in .html).",
         mixinStandardHelpOptions = true)
 public final class AnalyzeCli implements Callable<Integer> {
 
@@ -52,21 +52,41 @@ public final class AnalyzeCli implements Callable<Integer> {
                     + "Candidates section shows runtime data only.")
     private boolean noSourceScan;
 
+    @Option(names = "--format", paramLabel = "<format>",
+            description = "Output format: text (default), html, json.",
+            defaultValue = "")
+    private String format;
+
     @Override
     public Integer call() throws IOException {
-        if (output == null) {
-            TextDumper.dump(recording, System.out);
+        boolean wantJson = "json".equalsIgnoreCase(format);
+        boolean wantHtml = "html".equalsIgnoreCase(format)
+                || (output != null && isHtml(output));
+
+        if (wantJson) {
+            PrintStream dest = outputStream(output);
+            JsonReport.write(recording, dest, sourceRoots, noSourceScan);
+            if (output != null) dest.close();
             return 0;
         }
-        if (isHtml(output)) {
+        if (wantHtml) {
+            if (output == null) {
+                System.err.println("--format html requires -o <file>");
+                return 1;
+            }
             HtmlReport.write(recording, output, sourceRoots, noSourceScan);
             return 0;
         }
-        try (OutputStream os = Files.newOutputStream(output);
-             PrintStream ps = new PrintStream(os, false, StandardCharsets.UTF_8)) {
-            TextDumper.dump(recording, ps);
-        }
+        // default: text
+        PrintStream dest = outputStream(output);
+        TextDumper.dump(recording, dest);
+        if (output != null) dest.close();
         return 0;
+    }
+
+    private static PrintStream outputStream(Path path) throws IOException {
+        if (path == null) return System.out;
+        return new PrintStream(Files.newOutputStream(path), false, StandardCharsets.UTF_8);
     }
 
     private static boolean isHtml(Path p) {

@@ -33,13 +33,12 @@ public final class Attribution {
     };
 
     // Prefixes that can never be a useful call-site even in the
-    // fallback pass — they're profiler/JDBC infrastructure by design.
+    // fallback pass — they're profiler infrastructure by design.
+    // java.sql./javax.sql. are omitted: JDK_PREFIXES covers them already.
     private static final String[] INFRA_PREFIXES = {
             "fi.vesas.jdbclens.capture.",
             "fi.vesas.jdbclens.sink.",
-            "fi.vesas.jdbclens.storage.",
-            "java.sql.",
-            "javax.sql."
+            "fi.vesas.jdbclens.storage."
     };
 
     private Attribution() {

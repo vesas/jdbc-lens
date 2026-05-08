@@ -8,7 +8,6 @@ import fi.vesas.jdbclens.capture.Event;
 import fi.vesas.jdbclens.capture.EventType;
 import fi.vesas.jdbclens.capture.ParameterValues;
 import fi.vesas.jdbclens.capture.StackFrameSnapshot;
-import fi.vesas.jdbclens.storage.BinaryLogReader;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -21,7 +20,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,7 +45,7 @@ public final class HtmlReport {
     public static void write(Path input, Path output,
                               List<Path> sourceRootOverrides,
                               boolean noSourceScan) throws IOException {
-        Model m = Model.load(input);
+        AnalysisModel m = AnalysisModel.load(input);
         SourceScanResult scan = resolveSourceScan(m, sourceRootOverrides, noSourceScan);
         try (OutputStream os = Files.newOutputStream(output);
              PrintStream out = new PrintStream(os, false, StandardCharsets.UTF_8)) {
@@ -57,7 +55,7 @@ public final class HtmlReport {
     }
 
     public static void write(Path input, PrintStream out) throws IOException {
-        Model m = Model.load(input);
+        AnalysisModel m = AnalysisModel.load(input);
         renderAll(out, input, m, SourceScanResult.empty());
     }
 
@@ -69,7 +67,7 @@ public final class HtmlReport {
      *   <li>empty (report renders runtime-only with a footer hint).</li>
      * </ol>
      */
-    private static SourceScanResult resolveSourceScan(Model m,
+    private static SourceScanResult resolveSourceScan(AnalysisModel m,
                                                        List<Path> overrides,
                                                        boolean noScan) {
         if (noScan) {
@@ -86,8 +84,10 @@ public final class HtmlReport {
         return SourceScanResult.of(sites);
     }
 
-    private static void renderAll(PrintStream out, Path input, Model m, SourceScanResult scan) {
+    private static void renderAll(PrintStream out, Path input, AnalysisModel m, SourceScanResult scan) {
         List<N1Finding> findings = new N1Detector().detect(m.executeAgg, m.sqls, m.stacks);
+        List<RepeatedPrepareFinding> preparedInLoop = new RepeatedPrepareDetector()
+                .detect(m.eventsByOp, m.sqls, m.ops, m.stacks);
         List<EmulatedCursorFinding> emulatedCursors = new EmulatedCursorDetector()
                 .detect(m.executeAgg, m.sqls, m.stacks);
         List<RedundantFinding> redundant = new RedundantQueryDetector()
@@ -136,8 +136,8 @@ public final class HtmlReport {
                             + "turning it on for production-shaped data."));
         }
         SummaryInputs summary = new SummaryInputs(
-                m, findings, emulatedCursors, redundant, entities, readThenWrite,
-                overWide, writeAmp, idleLocks, commitPerRecord, tableAccess, scan);
+                m, findings, preparedInLoop, emulatedCursors, redundant, entities,
+                readThenWrite, overWide, writeAmp, idleLocks, commitPerRecord, tableAccess, scan);
         renderHead(out, input);
         renderSummary(out, summary);
         LinkedHashMap<String, Runnable> sections = new LinkedHashMap<>();
@@ -150,6 +150,7 @@ public final class HtmlReport {
                     () -> renderCommitPerRecord(out, commitPerRecord));
         }
         sections.put("N+1 findings", () -> renderFindings(out, findings));
+        sections.put("Prepared in loop", () -> renderPreparedInLoop(out, preparedInLoop));
         sections.put("Walk-and-fetch loops",
                 () -> renderEmulatedCursors(out, emulatedCursors));
         sections.put("Write patterns", () -> {
@@ -231,14 +232,14 @@ public final class HtmlReport {
         return sb.toString();
     }
 
-    private static void writeDrillDownPages(Path mainReportFile, Model m) throws IOException {
+    private static void writeDrillDownPages(Path mainReportFile, AnalysisModel m) throws IOException {
         Path parent = mainReportFile.toAbsolutePath().getParent();
         if (parent == null) {
             return;
         }
         Path opsDir = parent.resolve("ops");
         String backLink = "../" + mainReportFile.getFileName().toString();
-        for (Map.Entry<Long, OpStats> entry : m.opStats.entrySet()) {
+        for (Map.Entry<Long, AnalysisModel.OpStats> entry : m.opStats.entrySet()) {
             long opId = entry.getKey();
             if (opId == NO_OPERATION) {
                 continue;
@@ -255,7 +256,7 @@ public final class HtmlReport {
         }
     }
 
-    private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, Model m) {
+    private static void renderRedundant(PrintStream out, List<RedundantFinding> findings, AnalysisModel m) {
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No repeated (template, parameters) "
                     + "pairs within a single operation.</p>");
@@ -302,7 +303,7 @@ public final class HtmlReport {
         out.println("</div>");
     }
 
-    private static String renderValues(RedundantFinding f, Model m, boolean valuesCaptured) {
+    private static String renderValues(RedundantFinding f, AnalysisModel m, boolean valuesCaptured) {
         if (!valuesCaptured) {
             return "      <dt>parameters</dt><dd class=\"muted\">(not captured \u2014 "
                     + "enable with <code>ProfilerConfig.withCaptureParameterValues(true)</code>)"
@@ -357,7 +358,7 @@ public final class HtmlReport {
         return sb.toString();
     }
 
-    private static void renderEntityAccess(PrintStream out, List<EntityFinding> findings, Model m) {
+    private static void renderEntityAccess(PrintStream out, List<EntityFinding> findings, AnalysisModel m) {
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No entity was accessed by more than one "
                     + "distinct template within the same operation.</p>");
@@ -398,7 +399,7 @@ public final class HtmlReport {
     }
 
     private static void renderReadThenWrite(PrintStream out,
-                                             List<ReadThenWriteFinding> findings, Model m) {
+                                             List<ReadThenWriteFinding> findings, AnalysisModel m) {
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No SELECT + UPDATE/DELETE pair on the "
                     + "same row inside the same operation.</p>");
@@ -710,7 +711,7 @@ public final class HtmlReport {
 
     private static void renderWriteAmplification(PrintStream out,
                                                   List<WriteAmplificationFinding> findings,
-                                                  Model m) {
+                                                  AnalysisModel m) {
         if (findings.isEmpty()) {
             out.println("<p class=\"findings-empty\">No row was UPDATEd more than once "
                     + "inside the same operation.</p>");
@@ -900,7 +901,7 @@ public final class HtmlReport {
 
     private static void renderTransactions(PrintStream out,
                                            Map<Long, List<Transaction>> txByOp,
-                                           Model m) {
+                                           AnalysisModel m) {
         List<Transaction> all = new ArrayList<>();
         for (List<Transaction> list : txByOp.values()) {
             all.addAll(list);
@@ -1049,7 +1050,7 @@ public final class HtmlReport {
 
     private static void renderTopTransactionsTable(PrintStream out,
                                                    List<Transaction> all,
-                                                   Model m) {
+                                                   AnalysisModel m) {
         if (all.isEmpty()) {
             return;
         }
@@ -1098,7 +1099,7 @@ public final class HtmlReport {
         out.println("</table>");
     }
 
-    private static void renderOperations(PrintStream out, Model m) {
+    private static void renderOperations(PrintStream out, AnalysisModel m) {
         boolean anyOp = m.ops != null && !m.ops.isEmpty();
         if (!anyOp) {
             out.println("<p class=\"findings-empty\">No op-ids were recorded. "
@@ -1131,7 +1132,7 @@ public final class HtmlReport {
                         a.getValue().totalDurationNanos))
                 .forEach(entry -> {
                     long opId = entry.getKey();
-                    OpStats s = entry.getValue();
+                    AnalysisModel.OpStats s = entry.getValue();
                     boolean noOp = opId == NO_OPERATION;
                     String label = noOp
                             ? "(no operation)"
@@ -1186,16 +1187,16 @@ public final class HtmlReport {
                 + "</div>";
     }
 
-    private static void renderInvocationSwimlanes(PrintStream out, Model m) {
+    private static void renderInvocationSwimlanes(PrintStream out, AnalysisModel m) {
         if (m.invStats.isEmpty()) {
             return;
         }
         long globalFirst = m.firstTs;
         long globalSpan = Math.max(1L, m.lastTs - m.firstTs);
 
-        Map<Long, List<InvStats>> byName = new HashMap<>();
+        Map<Long, List<AnalysisModel.InvStats>> byName = new HashMap<>();
         Map<Long, Long> dbTimeByName = new HashMap<>();
-        for (InvStats is : m.invStats.values()) {
+        for (AnalysisModel.InvStats is : m.invStats.values()) {
             byName.computeIfAbsent(is.nameId, k -> new ArrayList<>()).add(is);
             dbTimeByName.merge(is.nameId, is.totalDurationNanos, Long::sum);
         }
@@ -1239,7 +1240,7 @@ public final class HtmlReport {
             out.println("  <line x1=\"" + labelW + "\" y1=\"" + (yCenter + laneH / 2)
                     + "\" x2=\"" + viewW + "\" y2=\"" + (yCenter + laneH / 2)
                     + "\" stroke=\"#eee\" stroke-width=\"0.3\"/>");
-            for (InvStats is : byName.get(nameId)) {
+            for (AnalysisModel.InvStats is : byName.get(nameId)) {
                 double xFrac = (double) (is.firstTs - globalFirst) / (double) globalSpan;
                 double wFrac = (double) (is.lastTs - is.firstTs) / (double) globalSpan;
                 double x = labelW + xFrac * barColW;
@@ -1263,218 +1264,7 @@ public final class HtmlReport {
         FlameGraph.renderHtml(out, root);
     }
 
-    /** Sentinel in Event.operationId meaning "no op was set." Mirrors
-     *  {@code CaptureContext.NO_OPERATION}; duplicated here to avoid an
-     *  extra cross-module import for a single constant. */
-    private static final long NO_OPERATION = -1L;
-
-    private static final class Model {
-        Path source;
-        Map<Integer, String> sqls = new HashMap<>();
-        Map<Integer, StackFrameSnapshot[]> stacks = new HashMap<>();
-        // Op-id → name. Events with operationId = -1 ("no op") are not
-        // in this map; renderers display them as "(no operation)".
-        Map<Long, String> ops = new HashMap<>();
-        Map<Long, OpStats> opStats = new HashMap<>();
-        Aggregator agg = new Aggregator();
-        // Same shape as `agg` but restricted to actual query executions
-        // (PREPARE / NEXT / CLOSE / COMMIT / ROLLBACK dropped). Spec §8.3
-        // counts "executions" — PREPARE and NEXT would inflate the count
-        // and split each template across many stacks, masking real N+1s.
-        Aggregator executeAgg = new Aggregator();
-        long firstTs = Long.MAX_VALUE;
-        long lastTs = Long.MIN_VALUE;
-        long totalDurationNanos;
-        int eventCount;
-        // Cardinality for the tables: how many distinct templates each
-        // call-site uses, and how many call-sites each template shows up
-        // from. Spec §9 calls these the "unique template count" and
-        // "originating call-site count" columns.
-        Map<Integer, Set<Integer>> templatesPerStack = new HashMap<>();
-        Map<Integer, Set<Integer>> stacksPerTemplate = new HashMap<>();
-        // Count + duration per (op-id, sql-id, fingerprint, stack-id)
-        // so the redundant-query detector has what it needs.
-        Map<RedundantQueryDetector.Key, RedundantQueryDetector.Stats> redundant = new HashMap<>();
-        // Populated only when the recording was produced with
-        // captureParameterValues = true. Otherwise empty, and the
-        // report renders a hint about how to turn value capture on.
-        Map<Integer, ParameterValues> paramValuesById = new HashMap<>();
-        // (execute-event-key) -> every distinct paramValuesId seen for
-        // this key, in insertion order. Usually one entry. More than one
-        // means a fingerprint collision or a regression in fingerprint
-        // composition: events that the detector counted as "the same
-        // query with the same parameters" actually bound different
-        // values, and the report must surface that instead of silently
-        // showing whichever set arrived first.
-        Map<RedundantQueryDetector.Key, Set<Integer>> valuesIdForKey = new HashMap<>();
-        // Every event, bucketed by op-id. Memory cost is linear in
-        // total events — fine for the recording sizes the Phase-2
-        // report is meant for (test-suite scale, not all-day prod).
-        // Streaming drill-down is left for later.
-        Map<Long, List<Event>> eventsByOp = new HashMap<>();
-        // Per-invocation aggregates (one entry per distinct
-        // operationInvocationId seen). Drives the swim-lane strip in
-        // the Operations section — separate invocations of the same
-        // op name share an `operationId` but get distinct entries here.
-        Map<Long, InvStats> invStats = new HashMap<>();
-        // Environment snapshot from the one-shot REC_RECORDING_META
-        // record. Empty strings when the recording predates the record
-        // type; SourceRootInference treats them as "no info."
-        String userDir = "";
-        String javaClassPath = "";
-        String javaCommand = "";
-
-        static Model load(Path input) throws IOException {
-            Model m = new Model();
-            m.source = input;
-            BinaryLogReader reader = new BinaryLogReader(input);
-            reader.read(new BinaryLogReader.Handler() {
-                @Override
-                public void onSqlDelta(int firstId, List<String> entries) {
-                    for (int i = 0; i < entries.size(); i++) {
-                        m.sqls.put(firstId + i, entries.get(i));
-                    }
-                }
-
-                @Override
-                public void onStackDelta(int firstId, List<StackFrameSnapshot[]> entries) {
-                    for (int i = 0; i < entries.size(); i++) {
-                        m.stacks.put(firstId + i, entries.get(i));
-                    }
-                }
-
-                @Override
-                public void onOpDelta(int firstId, List<String> names) {
-                    for (int i = 0; i < names.size(); i++) {
-                        m.ops.put((long) (firstId + i), names.get(i));
-                    }
-                }
-
-                @Override
-                public void onParamValuesDelta(int firstId, List<ParameterValues> entries) {
-                    for (int i = 0; i < entries.size(); i++) {
-                        m.paramValuesById.put(firstId + i, entries.get(i));
-                    }
-                }
-
-                @Override
-                public void onRecordingMeta(String userDir, String classpath, String command) {
-                    m.userDir = userDir == null ? "" : userDir;
-                    m.javaClassPath = classpath == null ? "" : classpath;
-                    m.javaCommand = command == null ? "" : command;
-                }
-
-                @Override
-                public void onEvents(List<Event> events) {
-                    for (Event e : events) {
-                        // Events that the capture path emitted with no
-                        // stack (NEXT, CLOSE — the analyzer doesn't
-                        // attribute against their call-sites) carry
-                        // CaptureContext.NO_STACK_TRACE. Keep them out
-                        // of the by-stack rollups so the top-callsites
-                        // ranking and the cardinality maps don't grow
-                        // a synthetic "stack[-1]" bucket.
-                        boolean hasStack = e.stackTraceId >= 0;
-                        if (hasStack) {
-                            m.agg.add(e);
-                        }
-                        if (isExecute(e.eventType)) {
-                            m.executeAgg.add(e);
-                        }
-                        m.eventCount++;
-                        long dur = Math.max(0L, e.durationNanos);
-                        m.totalDurationNanos += dur;
-                        if (e.timestampNanos < m.firstTs) {
-                            m.firstTs = e.timestampNanos;
-                        }
-                        long end = e.timestampNanos + dur;
-                        if (end > m.lastTs) {
-                            m.lastTs = end;
-                        }
-                        if (hasStack) {
-                            m.templatesPerStack
-                                    .computeIfAbsent(e.stackTraceId, k -> new HashSet<>())
-                                    .add(e.sqlId);
-                            m.stacksPerTemplate
-                                    .computeIfAbsent(e.sqlId, k -> new HashSet<>())
-                                    .add(e.stackTraceId);
-                        }
-                        OpStats os = m.opStats.computeIfAbsent(e.operationId, k -> new OpStats());
-                        os.count++;
-                        os.totalDurationNanos += dur;
-                        if (e.sqlId >= 0) {
-                            os.distinctSqls.add(e.sqlId);
-                        }
-                        m.eventsByOp.computeIfAbsent(e.operationId, k -> new ArrayList<>()).add(e);
-                        if (e.operationInvocationId >= 0L) {
-                            InvStats is = m.invStats.computeIfAbsent(
-                                    e.operationInvocationId, k -> new InvStats());
-                            if (is.count == 0L) {
-                                is.nameId = e.operationId;
-                                is.firstTs = e.timestampNanos;
-                                is.lastTs = end;
-                            } else {
-                                if (e.timestampNanos < is.firstTs) {
-                                    is.firstTs = e.timestampNanos;
-                                }
-                                if (end > is.lastTs) {
-                                    is.lastTs = end;
-                                }
-                            }
-                            is.count++;
-                            is.totalDurationNanos += dur;
-                        }
-                        if (isExecute(e.eventType) && e.parameterFingerprint != 0L) {
-                            RedundantQueryDetector.Key key = new RedundantQueryDetector.Key(
-                                    e.operationId, e.sqlId, e.parameterFingerprint, e.stackTraceId);
-                            RedundantQueryDetector.Stats rs = m.redundant.computeIfAbsent(
-                                    key, k -> new RedundantQueryDetector.Stats());
-                            rs.count++;
-                            rs.totalDurationNanos += dur;
-                            if (e.parameterValuesId >= 0) {
-                                m.valuesIdForKey
-                                        .computeIfAbsent(key, k -> new LinkedHashSet<>())
-                                        .add(e.parameterValuesId);
-                            }
-                        }
-                    }
-                }
-            });
-            return m;
-        }
-
-        long wallNanos() {
-            if (eventCount == 0) {
-                return 0L;
-            }
-            return Math.max(0L, lastTs - firstTs);
-        }
-
-        private static boolean isExecute(byte eventTypeCode) {
-            byte c = eventTypeCode;
-            return c == EventType.EXECUTE_QUERY.code()
-                    || c == EventType.EXECUTE_UPDATE.code()
-                    || c == EventType.EXECUTE_BATCH.code();
-        }
-    }
-
-    private static final class OpStats {
-        long count;
-        long totalDurationNanos;
-        Set<Integer> distinctSqls = new HashSet<>();
-    }
-
-    /** One invocation of {@code Profiler.currentOperation(name)}: event span on
-     *  the wall-clock timeline, the name-id it ran under, and a small activity
-     *  summary for the swim-lane tooltip. */
-    private static final class InvStats {
-        long nameId;
-        long firstTs;
-        long lastTs;
-        long count;
-        long totalDurationNanos;
-    }
-
+    private static final long NO_OPERATION = AnalysisModel.NO_OPERATION;
     // --- rendering ---
 
     private static void renderHead(PrintStream out, Path input) {
@@ -1825,8 +1615,9 @@ public final class HtmlReport {
     }
 
     private record SummaryInputs(
-            Model m,
+            AnalysisModel m,
             List<N1Finding> n1,
+            List<RepeatedPrepareFinding> preparedInLoop,
             List<EmulatedCursorFinding> emulatedCursors,
             List<RedundantFinding> redundant,
             List<EntityFinding> entities,
@@ -1840,7 +1631,7 @@ public final class HtmlReport {
     }
 
     private static void renderSummary(PrintStream out, SummaryInputs s) {
-        Model m = s.m();
+        AnalysisModel m = s.m();
         out.println("<h1>jdbc-prof report</h1>");
         out.println("<div class=\"meta\">Recording: <code>" + htmlEscape(m.source.toString()) + "</code></div>");
 
@@ -1869,10 +1660,10 @@ public final class HtmlReport {
     }
 
     private static void renderSeverity(PrintStream out, SummaryInputs s) {
-        int total = s.n1().size() + s.idleLocks().size() + s.overWide().size()
-                + s.writeAmp().size() + s.redundant().size() + s.emulatedCursors().size()
-                + s.entities().size() + s.readThenWrite().size()
-                + s.commitPerRecord().size();
+        int total = s.n1().size() + s.preparedInLoop().size() + s.idleLocks().size()
+                + s.overWide().size() + s.writeAmp().size() + s.redundant().size()
+                + s.emulatedCursors().size() + s.entities().size()
+                + s.readThenWrite().size() + s.commitPerRecord().size();
         out.println("<h2>Severity</h2>");
         if (total == 0) {
             out.println("<p class=\"findings-empty\">No detector flagged anything in "
@@ -1889,6 +1680,10 @@ public final class HtmlReport {
                 .mapToLong(N1Finding::totalDurationNanos).max().orElse(0L);
         sevBadge(out, "N+1", s.n1().size(),
                 worstN1 > 0 ? "biggest " + formatDuration(worstN1) : null);
+        int worstPrepare = s.preparedInLoop().stream()
+                .mapToInt(RepeatedPrepareFinding::prepareCount).max().orElse(0);
+        sevBadge(out, "Prepared in loop", s.preparedInLoop().size(),
+                worstPrepare > 0 ? "worst " + worstPrepare + "×" : null);
         int worstWide = s.overWide().stream()
                 .mapToInt(OverWideUpdateFinding::setColumnCount).max().orElse(0);
         sevBadge(out, "Wide UPDATEs", s.overWide().size(),
@@ -2001,6 +1796,45 @@ public final class HtmlReport {
         out.println("</div>");
     }
 
+    private static void renderPreparedInLoop(PrintStream out,
+                                              List<RepeatedPrepareFinding> findings) {
+        if (findings.isEmpty()) {
+            out.println("<p class=\"findings-empty\">No PreparedStatement constructed "
+                    + "inside a loop detected above the default threshold (count ≥ 10).</p>");
+            return;
+        }
+        out.println("<p class=\"findings-empty\">The same SQL template was prepared more "
+                + "than once from one call-site inside one logical operation — a "
+                + "<code>prepareStatement()</code> call sitting inside a loop. Every "
+                + "repetition after the first makes the database parse and plan the same "
+                + "query again. Cards are ranked by prepare count.</p>");
+        out.println("<div class=\"findings\">");
+        for (RepeatedPrepareFinding f : findings) {
+            out.println("  <div class=\"finding\">");
+            out.println("    <div class=\"finding-head\">"
+                    + "<span class=\"finding-count\">" + f.prepareCount() + "×</span> "
+                    + "<span class=\"finding-time\">"
+                    + htmlEscape(formatDuration(f.totalPrepareNanos()))
+                    + " total prepare overhead</span></div>");
+            out.println("    <dl class=\"finding-kv\">");
+            out.println("      <dt>template</dt><dd>"
+                    + tdContent(f.sql() == null ? "(unknown)" : f.sql()) + "</dd>");
+            if (f.operationName() != null) {
+                out.println("      <dt>inside operation</dt><dd>"
+                        + htmlEscape(f.operationName()) + "</dd>");
+            }
+            out.println("      <dt>prepared here</dt><dd>"
+                    + htmlEscape(formatFrame(f.callSite())) + "</dd>");
+            out.println("      <dt>suggestion</dt><dd class=\"muted\">"
+                    + "Move the <code>prepareStatement()</code> call above the loop "
+                    + "and reuse the <code>PreparedStatement</code> across iterations. "
+                    + "Close it after the loop completes.</dd>");
+            out.println("    </dl>");
+            out.println("  </div>");
+        }
+        out.println("</div>");
+    }
+
     private static String tdContent(String s) {
         return "<code class=\"sql\">" + htmlEscape(s) + "</code>";
     }
@@ -2011,7 +1845,7 @@ public final class HtmlReport {
         return "sql[" + sqlId + "]";
     }
 
-    private static void renderCallSitesTable(PrintStream out, Model m) {
+    private static void renderCallSitesTable(PrintStream out, AnalysisModel m) {
         out.println("<table>");
         out.println("  <thead><tr>"
                 + "<th>Call-site</th>"
@@ -2035,7 +1869,7 @@ public final class HtmlReport {
         out.println("</table>");
     }
 
-    private static void renderTemplatesTable(PrintStream out, Model m,
+    private static void renderTemplatesTable(PrintStream out, AnalysisModel m,
                                              Map<Integer, TemplateStats> stats) {
         out.println("<table>");
         out.println("  <thead><tr>"
@@ -2100,7 +1934,7 @@ public final class HtmlReport {
         return b;
     }
 
-    private static Map<Integer, TemplateStats> computeTemplateStats(Model m) {
+    private static Map<Integer, TemplateStats> computeTemplateStats(AnalysisModel m) {
         // Scope: execute events only — PREPARE / NEXT / CLOSE would
         // skew the duration distribution toward "free" no-ops. Boxed
         // Long is fine here; analysis layer has no perf budget.
@@ -2170,14 +2004,14 @@ public final class HtmlReport {
         return sb.toString();
     }
 
-    private static String tdSite(Model m, int stackId) {
+    private static String tdSite(AnalysisModel m, int stackId) {
         StackFrameSnapshot[] frames = m.stacks.get(stackId);
         String label = frames == null ? "(stack " + stackId + ")"
                 : formatFrame(Attribution.callSite(frames));
         return "<td><code class=\"site\">" + htmlEscape(label) + "</code></td>";
     }
 
-    private static String tdSql(Model m, int sqlId) {
+    private static String tdSql(AnalysisModel m, int sqlId) {
         if (sqlId < 0) {
             return "<td class=\"muted\">(no SQL)</td>";
         }

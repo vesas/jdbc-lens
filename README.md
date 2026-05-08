@@ -102,6 +102,46 @@ network calls, no external CSS or JS.
 - Sortable tables: `(call-site, template)` pairs, call-sites alone,
   templates alone.
 
+## JSON output
+
+Pass `--format json` to get machine-readable results instead of HTML:
+
+```
+./gradlew :analysis:run --args="analyze recording.jdbclog --format json"
+```
+
+Every finding includes its SQL template, execution count, total duration in
+nanoseconds, and the call-site as structured data (class, method, line number).
+Findings are sorted by severity — HIGH first, then MEDIUM, then LOW.
+
+```json
+{
+  "schemaVersion": 1,
+  "summary": { "totalEvents": 3200, "findingCounts": { "n1": 2 } },
+  "findings": [
+    {
+      "type": "n1",
+      "severity": "HIGH",
+      "sql": "SELECT name FROM customers WHERE id = ?",
+      "count": 150,
+      "totalDurationNanos": 4500000,
+      "callSite": {
+        "className": "com.example.OrderService",
+        "methodName": "loadAll",
+        "lineNumber": 84
+      }
+    }
+  ],
+  "topCallSites": [...],
+  "topTemplates": [...]
+}
+```
+
+If source files are accessible, each call-site also includes a `sourceSnippet`
+block with the 8 lines of code surrounding the problem. Source roots are inferred
+from the classpath captured in the recording; you can set them explicitly with
+`--source-root src/main/java`.
+
 ## Requirements
 
 - Java 21+
