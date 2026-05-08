@@ -16,11 +16,12 @@ dependencies {
 
 allprojects {
     group = "fi.vesas.jdbclens"
-    version = "0.1.0"
+    version = "0.2.0-SNAPSHOT"
 }
 
 subprojects {
     apply(plugin = "java-library")
+    apply(plugin = "jacoco")
 
     extensions.configure<JavaPluginExtension> {
         toolchain {
@@ -42,6 +43,15 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        finalizedBy(tasks.named("jacocoTestReport"))
+    }
+
+    tasks.named<JacocoReport>("jacocoTestReport") {
+        dependsOn(tasks.withType<Test>())
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+        }
     }
 
     tasks.withType<JavaCompile>().configureEach {
