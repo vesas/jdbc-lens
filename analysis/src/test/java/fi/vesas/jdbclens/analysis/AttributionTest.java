@@ -12,9 +12,9 @@ class AttributionTest {
     @Test
     void picksFirstNonExcludedFrame() {
         StackFrameSnapshot[] frames = {
-                frame("fi.vesas.jdbcprof.capture.StackTraceInternTable", "internCurrent", 58),
-                frame("fi.vesas.jdbcprof.capture.CaptureContext", "emit", 91),
-                frame("fi.vesas.jdbcprof.capture.CapturingPreparedStatement", "executeQuery", 52),
+                frame("fi.vesas.jdbclens.capture.StackTraceInternTable", "internCurrent", 58),
+                frame("fi.vesas.jdbclens.capture.CaptureContext", "emit", 91),
+                frame("fi.vesas.jdbclens.capture.CapturingPreparedStatement", "executeQuery", 52),
                 frame("com.example.OrderDao", "findById", 47),
                 frame("com.example.OrderService", "load", 12),
                 frame("java.lang.Thread", "run", 840)
@@ -30,7 +30,7 @@ class AttributionTest {
     @Test
     void skipsFrameworksInDefaultExclusions() {
         StackFrameSnapshot[] frames = {
-                frame("fi.vesas.jdbcprof.capture.CaptureContext", "emit", 91),
+                frame("fi.vesas.jdbclens.capture.CaptureContext", "emit", 91),
                 frame("org.hibernate.internal.SessionImpl", "executeQuery", 200),
                 frame("org.springframework.jdbc.core.JdbcTemplate", "query", 431),
                 frame("com.example.UserRepository", "findAll", 23)
@@ -47,7 +47,7 @@ class AttributionTest {
         // fallback should return the first non-JDK frame — which in this
         // case is still a framework frame, but it's the best we have.
         StackFrameSnapshot[] frames = {
-                frame("fi.vesas.jdbcprof.capture.CaptureContext", "emit", 1),
+                frame("fi.vesas.jdbclens.capture.CaptureContext", "emit", 1),
                 frame("org.hibernate.internal.SessionImpl", "executeQuery", 2),
                 frame("org.springframework.jdbc.core.JdbcTemplate", "query", 3)
         };

@@ -38,9 +38,9 @@ public record ProfilerConfig(
             "javax.persistence.",
             "org.springframework.jdbc.",
             "org.springframework.orm.",
-            "fi.vesas.jdbcprof.capture.",
-            "fi.vesas.jdbcprof.sink.",
-            "fi.vesas.jdbcprof.storage.");
+            "fi.vesas.jdbclens.capture.",
+            "fi.vesas.jdbclens.sink.",
+            "fi.vesas.jdbclens.storage.");
 
     public static ProfilerConfig defaults(Path outputFile) {
         return new ProfilerConfig(

@@ -28,7 +28,7 @@ class FlameGraphTest {
         agg.add(exec(1, 10, 2_000));
 
         Map<Integer, StackFrameSnapshot[]> stacks = Map.of(1, new StackFrameSnapshot[] {
-                frame("fi.vesas.jdbcprof.capture.CaptureContext", "emit", 91),  // infra — stripped
+                frame("fi.vesas.jdbclens.capture.CaptureContext", "emit", 91),  // infra — stripped
                 frame("com.example.Dao", "find", 47),                                  // call-site
                 frame("com.example.Service", "load", 12),                              // mid
                 frame("com.example.Main", "main", 5),                                  // outer
@@ -89,7 +89,7 @@ class FlameGraphTest {
         Aggregator agg = new Aggregator();
         agg.add(exec(1, 10, 4_000));
         Map<Integer, StackFrameSnapshot[]> stacks = Map.of(1, new StackFrameSnapshot[] {
-                frame("fi.vesas.jdbcprof.capture.CaptureContext", "emit", 1),
+                frame("fi.vesas.jdbclens.capture.CaptureContext", "emit", 1),
                 frame("java.lang.Thread", "run", 2)
         });
         FlameGraph.Node root = FlameGraph.build(agg, stacks);
