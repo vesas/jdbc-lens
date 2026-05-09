@@ -57,7 +57,7 @@ dependencies {
 
 Use `implementation` / `compile` scope instead if you want the profiler active outside tests.
 
-### 3. Start the profiler and wrap your DataSource
+### 2. Start the profiler and wrap your DataSource
 
 Before the workload you want to profile:
 
@@ -78,12 +78,12 @@ when no profiler is running and start capturing once `start()` fires.
 The JVM shutdown hook calls `Profiler.stop()` automatically, or call
 it yourself when the workload is done.
 
-### 4. Run your tests / workload
+### 3. Run your tests / workload
 
 Every query that flows through `profiled` is recorded to
 `recording.jdbclog`.
 
-### 5. Generate the report
+### 4. Generate the report
 
 From the `jdbc-lens` repo:
 
