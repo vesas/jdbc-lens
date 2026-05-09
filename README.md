@@ -10,6 +10,22 @@ view is what makes N+1 patterns and dominant call-sites easy to find.
 
 See sample report → <a href="https://vesas.fi/jdbclens/report.html">View sample report</a>
 
+## How it compares
+
+| Tool                       | Call-site grouping | N+1 detection | Output                                       |
+|----------------------------|--------------------|---------------|----------------------------------------------|
+| **JDBCLens**               | Built-in           | Automatic     | Self-contained HTML                          |
+| P6Spy                      | —                  | —             | Log file (stack traces via `stacktrace=true`) |
+| datasource-proxy           | —                  | —             | Log file (stack traces via custom listener)  |
+| Hibernate Statistics       | —                  | —             | Aggregate counters, Hibernate-only           |
+| `spring.jpa.show-sql`      | —                  | —             | Console                                      |
+
+P6Spy can write a stack trace per statement via `stacktrace=true`. datasource-proxy gives you a listener API where you can capture stack traces yourself. Both leave the grouping by call-site and the N+1 analysis to whoever reads the log.
+
+Hibernate Statistics counts queries but only sees Hibernate.
+
+JDBCLens is a `DataSource` proxy. No agent, no bytecode rewriting.
+
 ## Try it in 30 seconds
 
 A bundled sample app talks to H2 and runs a classic N+1 loop under
