@@ -8,9 +8,9 @@ view is what makes N+1 patterns and dominant call-sites easy to find.
 
 ## Screenshots
 
-![JDBC Profiler report screenshot](ss2.png)
+![JDBC Profiler report screenshot](docs/screenshots/ss2.png)
 
-![JDBC Profiler report screenshot](ss1.png)
+![JDBC Profiler report screenshot](docs/screenshots/ss1.png)
 
 ## Try it in 30 seconds
 
