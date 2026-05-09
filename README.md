@@ -10,12 +10,6 @@ view is what makes N+1 patterns and dominant call-sites easy to find.
 
 See sample report → <a href="https://vesas.fi/jdbclens/report.html">View sample report</a>
 
-## Screenshots
-
-![JDBC Profiler report screenshot](docs/screenshots/ss2.png)
-
-![JDBC Profiler report screenshot](docs/screenshots/ss1.png)
-
 ## Try it in 30 seconds
 
 A bundled sample app talks to H2 and runs a classic N+1 loop under
