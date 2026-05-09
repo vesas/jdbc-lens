@@ -10,7 +10,7 @@ view is what makes N+1 patterns and dominant call-sites easy to find.
 
 See sample report generated for the sample-app in this repo
 
-<a href="https://vesas.fi/jdbclens-sample-report.html">View sample report</a>
+<a href="https://vesas.fi/jdbclens/report.html">View sample report</a>
 
 ## Screenshots
 
