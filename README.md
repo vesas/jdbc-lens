@@ -1,5 +1,7 @@
 # JDBCLens
 
+[![Maven Central](https://img.shields.io/maven-central/v/fi.vesas.jdbclens/jdbc-lens-core.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/fi.vesas.jdbclens/jdbc-lens-core) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Java 21+](https://img.shields.io/badge/Java-21%2B-orange.svg)](https://openjdk.org/projects/jdk/21/)
+
 Find the line of code that's running 50 queries in a loop.
 Records every JDBC query your app runs, attributes it to the call-site
 in your code, and produces an HTML report. Results are grouped by
