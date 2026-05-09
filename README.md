@@ -6,6 +6,12 @@ in your code, and produces an HTML report. Results are grouped by
 call-site, by SQL template, and by their combination. The call-site
 view is what makes N+1 patterns and dominant call-sites easy to find.
 
+## Sample report
+
+See sample report generated for the sample-app in this repo
+
+<a href="https://vesas.fi/jdbclens-sample-report.html">View sample report</a>
+
 ## Screenshots
 
 ![JDBC Profiler report screenshot](docs/screenshots/ss2.png)
