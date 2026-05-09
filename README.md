@@ -1,5 +1,6 @@
 # JDBCLens
 
+Find the line of code that's running 50 queries in a loop.
 Records every JDBC query your app runs, attributes it to the call-site
 in your code, and produces an HTML report. Results are grouped by
 call-site, by SQL template, and by their combination. The call-site
